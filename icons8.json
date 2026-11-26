@@ -1,0 +1,167 @@
+{
+  "version": 2,
+  "icons": {
+    "pack": "liquid-glass-color",
+    "sizes": [
+      18,
+      24
+    ],
+    "color": "original",
+    "items": {
+      "home": {
+        "id": "EaHvBlFeXuaQ"
+      },
+      "practice": {
+        "id": "TTEbW3f5VffL"
+      },
+      "history": {
+        "id": "pSIrWHfPdkxo"
+      },
+      "profile": {
+        "id": "Sa6n43euOIas"
+      },
+      "settings": {
+        "id": "x0AbqORDA783"
+      },
+      "new": {
+        "id": "HKsIxMKXYMwQ"
+      },
+      "mic": {
+        "id": "ZnubDxFaPnvY"
+      },
+      "audio": {
+        "id": "ltSqVXtxgCGT"
+      },
+      "shield": {
+        "id": "xbbqYxzwmuHd"
+      },
+      "resume": {
+        "id": "kizsQlXw0odG"
+      },
+      "plan": {
+        "id": "FZNZhdaM1XI5"
+      },
+      "chat": {
+        "id": "tm2MGgJhUykq"
+      },
+      "star": {
+        "id": "YrqQaTEULfVl"
+      },
+      "bot": {
+        "id": "OinpqSk7y90z"
+      },
+      "app": {
+        "id": "Q4kIyd7C6PUL"
+      }
+    }
+  },
+  "illustrations": {
+    "style": "bouncy",
+    "slots": {
+      "auth-hero": {
+        "id": "624584be3d71f362b7ad6423",
+        "heading": "Chat with a support operator on the phone",
+        "file": "Expo/Resources/Animations/auth-hero.mp4",
+        "poster": "Expo/Resources/Animations/auth-hero-poster.png",
+        "width": 1200,
+        "height": 1200,
+        "free_distribution": true
+      },
+      "privacy-hidden": {
+        "id": "633feab0234b9d00011d11db",
+        "style": "3d-fluency",
+        "heading": "protect",
+        "file": "Expo/Assets.xcassets/Privacy/privacy-hidden.imageset/privacy-hidden.png",
+        "width": 456,
+        "height": 456,
+        "free_distribution": false
+      },
+      "privacy-visible": {
+        "id": "634d5c9b17ae0e000113fbef",
+        "style": "3d-fluency",
+        "heading": "Blue iris eye with round white sclera",
+        "file": "Expo/Assets.xcassets/Privacy/privacy-visible.imageset/privacy-visible.png",
+        "width": 456,
+        "height": 456,
+        "free_distribution": false
+      },
+      "robot": {
+        "id": "6a8b45595f8ed3d82571a7de",
+        "style": "3d-stickle",
+        "heading": "Artificial intelligence robot symbol built from voxel cubes",
+        "file": "Design/robot/robot.png",
+        "animation": "Design/robot/robot.gif",
+        "width": 456,
+        "height": 456,
+        "free_distribution": false
+      },
+      "art-welcome": {
+        "id": "623bcdca2bb847000d204a3c",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-welcome.imageset/art-welcome@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-cv": {
+        "id": "6262e3ee6422a31f43225db6",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-cv.imageset/art-cv@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-work": {
+        "id": "624724db67985700014ec17f",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-work.imageset/art-work@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-review": {
+        "id": "630f590f30679398c5bb976a",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-review.imageset/art-review@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-assist": {
+        "id": "62835df0a9e0208498e530e9",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-assist.imageset/art-assist@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-audio": {
+        "id": "62c3822031adb50ed0389afd",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-audio.imageset/art-audio@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-ready": {
+        "id": "623bcdd860798d000fd7caab",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-ready.imageset/art-ready@2x.png",
+        "width": 456,
+        "free_distribution": true
+      },
+      "art-practice": {
+        "id": "623bcdd160798d000fd7caa3",
+        "style": "bouncy",
+        "file": "Expo/Assets.xcassets/Illustrations/art-practice.imageset/art-practice@2x.png",
+        "free_distribution": true
+      },
+      "calendar": {
+        "id": "62564d4ebafd4400131f1d5f",
+        "style": "bouncy",
+        "file": "Expo/Resources/Animations/calendar.mp4",
+        "free_distribution": true
+      },
+      "sent": {
+        "id": "626a4173d96d3d89c086694c",
+        "style": "bouncy",
+        "file": "Expo/Resources/Animations/sent.mp4",
+        "free_distribution": true
+      }
+    }
+  }
+}
