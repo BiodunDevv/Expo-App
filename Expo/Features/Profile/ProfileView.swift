@@ -26,6 +26,7 @@ struct ProfileView: View {
                 CvReplaceSection()
                 ProfileHighlights(profile: model.state.profile)
             }
+            SavedProfilesCard()
         }
         .onAppear(perform: load)
         .onChange(of: model.state.cv) { load() }

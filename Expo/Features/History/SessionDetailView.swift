@@ -26,7 +26,17 @@ struct SessionDetailView: View {
                 if let loadError {
                     Card { Text(loadError).foregroundStyle(Theme.danger); AsyncButton(title: "Try again", kind: .secondary) { await load() } }
                 }
+                if PracticeSession.isPractice(session.title) && session.id != model.state.activeSessionId {
+                    PracticeReviewCard(session: session)
+                }
                 notes(session)
+                if session.notesStatus == "ready" && isBackendID(session.id) && session.deletedAt == nil {
+                    Card(title: "Email", subtitle: model.canEmailNotes ? "Send these notes and the full transcript to your account email."
+                         : "Emailed notes are included from the Starter plan.", icon: "resume") {
+                        AsyncButton(title: "Email it to me", busyTitle: "Sending…", kind: .secondary) { await model.emailSession(session.id) }
+                            .disabled(!model.canEmailNotes || !model.state.consent.transcriptCapture.granted)
+                    }
+                }
                 if !session.assistantMessages.isEmpty {
                     Card(title: "Expo", icon: "bot") {
                         ForEach(session.assistantMessages) { message in

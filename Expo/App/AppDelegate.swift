@@ -123,7 +123,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard wanted != shortcutsActive else { return }
         shortcutsActive = wanted
         guard wanted else { hotKeys.unregisterAll(); return }
-        hotKeys.register(keyCode: kVK_Return, modifiers: cmdKey) { [weak self] in self?.overlays.showAssistant() }
+        hotKeys.register(keyCode: kVK_Return, modifiers: cmdKey) { [weak self] in
+            guard let self else { return }
+            self.overlays.showAssistant()
+            self.model.layout.asked()
+            Task { await self.model.assist.suggest() }
+        }
         hotKeys.register(keyCode: kVK_Return, modifiers: cmdKey | shiftKey) { [weak self] in
             guard let self else { return }
             self.overlays.showAssistant()

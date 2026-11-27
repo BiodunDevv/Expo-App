@@ -13,7 +13,7 @@ struct ExpoButtonStyle: ButtonStyle {
             .frame(height: compact ? 28 : 34)
             .foregroundStyle(kind == .primary || kind == .danger ? Theme.onAccent : (kind == .plain ? Theme.accent : Theme.text))
             .background {
-                let shape = RoundedRectangle(cornerRadius: compact ? 8 : 10)
+                let shape = Capsule()
                 switch kind {
                 case .primary: shape.fill(Theme.accent)
                 case .danger: shape.fill(Theme.danger)
@@ -24,7 +24,7 @@ struct ExpoButtonStyle: ButtonStyle {
             .opacity(enabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.snappy(duration: 0.15), value: configuration.isPressed)
-            .contentShape(.rect)
+            .contentShape(.capsule)
     }
 }
 

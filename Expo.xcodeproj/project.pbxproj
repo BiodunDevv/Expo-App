@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		17AA000130649A90006EF672 /* BotAvatarsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 17AA000330649A90006EF672 /* BotAvatarsKit */; };
+		17AA000630649A90006EF672 /* BorderBeamKit in Frameworks */ = {isa = PBXBuildFile; productRef = 17AA000730649A90006EF672 /* BorderBeamKit */; };
+		17AA000830649A90006EF672 /* VoiceRingKit in Frameworks */ = {isa = PBXBuildFile; productRef = 17AA000930649A90006EF672 /* VoiceRingKit */; };
 		17AA000230649A90006EF672 /* ThinkingOrbsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 17AA000430649A90006EF672 /* ThinkingOrbsKit */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +31,8 @@
 			files = (
 				17AA000130649A90006EF672 /* BotAvatarsKit in Frameworks */,
 				17AA000230649A90006EF672 /* ThinkingOrbsKit in Frameworks */,
+				17AA000830649A90006EF672 /* VoiceRingKit in Frameworks */,
+				17AA000630649A90006EF672 /* BorderBeamKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -70,6 +74,8 @@
 			packageProductDependencies = (
 				17AA000330649A90006EF672 /* BotAvatarsKit */,
 				17AA000430649A90006EF672 /* ThinkingOrbsKit */,
+				17AA000930649A90006EF672 /* VoiceRingKit */,
+				17AA000730649A90006EF672 /* BorderBeamKit */,
 			);
 			productName = Expo;
 			productReference = 174B3E7830649A90006EF672 /* Expo.app */;
@@ -261,6 +267,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Expo;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -294,6 +301,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Expo;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -349,6 +357,14 @@
 		17AA000430649A90006EF672 /* ThinkingOrbsKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ThinkingOrbsKit;
+		};
+		17AA000930649A90006EF672 /* VoiceRingKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VoiceRingKit;
+		};
+		17AA000730649A90006EF672 /* BorderBeamKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BorderBeamKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -49,7 +49,7 @@ struct GlanceCard: View {
                         NSPasteboard.general.setString(answer, forType: .string)
                     } label: { Image(systemName: "doc.on.doc") }
                         .buttonStyle(.expo(.plain, compact: true))
-                        .help("Copy the full answer").accessibilityLabel("Copy answer")
+                        .hint("Copy the full answer").accessibilityLabel("Copy answer")
                     Button("Full answer", action: showFull)
                         .buttonStyle(.expo(.plain, compact: true))
                         .fixedSize()
@@ -66,7 +66,7 @@ struct GlanceCard: View {
                 Spacer()
                 VStack(spacing: 8) {
                     Text("Nothing to show yet").font(.system(size: 14, weight: .semibold))
-                    Button("What should I say?") { Task { await assist.suggest() } }.buttonStyle(.expo(.primary, compact: true))
+                    Button("What should I say?") { model.layout.asked(); Task { await assist.suggest() } }.buttonStyle(.expo(.primary, compact: true))
                 }
                 .frame(maxWidth: .infinity)
                 Spacer()

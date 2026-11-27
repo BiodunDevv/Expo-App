@@ -6,11 +6,18 @@ import Observation
 @MainActor
 @Observable
 final class AssistController {
-    private(set) var snapshot = AssistSnapshot()
+    private(set) var snapshot = AssistSnapshot() {
+        didSet { if lifecycle != snapshot.lifecycle { lifecycle = snapshot.lifecycle } }
+    }
     private(set) var preview: TranscriptionResult?
 
     // Question state shared by the assistant panel.
     private(set) var pendingQuestion: String?
+    private(set) var pendingScreen = false
+    /// The snapshot's state on its own, so menus are not redrawn every second.
+    private(set) var lifecycle = AssistSnapshot().lifecycle
+    /// Captured pictures by answer, in memory until the session ends.
+    private(set) var screenshots: [String: String] = [:]
     private(set) var streamedText = ""
     private(set) var isAsking = false
     /// Loudness of the captured audio, 0 to 1.
@@ -38,6 +45,8 @@ final class AssistController {
     /// Whether the microphone actually joined the current capture.
     private(set) var capturingMicrophone = false
     @ObservationIgnored private var recovering = false
+    @ObservationIgnored private var lastOutageNotice: Date?
+    @ObservationIgnored private var microphoneNoticeShown = false
     @ObservationIgnored private var clockTask: Task<Void, Never>?
     @ObservationIgnored private var syncTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
@@ -87,6 +96,9 @@ final class AssistController {
         }
         generation += 1
         let expected = generation
+        lastOutageNotice = nil
+        screenshots = [:]
+        microphoneNoticeShown = false
         // Practice is for seeing answers, whatever real sessions are set to.
         autoAnswer = PracticeSession.isPractice(title) || (store.state.settings.autoAnswer && !store.state.settings.listenOnly)
         set { $0 = AssistSnapshot(lifecycle: .connecting) }
@@ -96,11 +108,13 @@ final class AssistController {
             let remote = try await backend.createSession(
                 title: String(title.trimmed.prefix(200)).nonEmpty ?? "Meeting session", startedAt: ISO.now(),
                 profileContextEnabled: settings.useCvContext && store.state.consent.cvProcessing.granted,
-                prepNotes: String(brief.trimmed.prefix(MeetingBrief.maxCharacters)).nonEmpty
+                prepNotes: String(brief.trimmed.prefix(MeetingBrief.maxCharacters)).nonEmpty,
+                emailNotes: settings.emailNotes
             )
             created = remote.id
             var session = remote.merged(into: nil)
             session.prepNotes = brief.trimmed.nonEmpty
+            session.emailNotes = settings.emailNotes
             store.upsert(session)
             store.update { $0.activeSessionId = session.id }
             syncedSegments = []
@@ -196,7 +210,7 @@ final class AssistController {
             }
             startClock()
             if !quiet {
-                onError(BackendError(message))
+                announceOutage(message)
                 if !permanent { recoverAutomatically(id) }
             }
             return false
@@ -225,6 +239,7 @@ final class AssistController {
         preview = nil
         pendingQuestion = nil
         streamedText = ""
+        screenshots = [:]
         set { $0 = AssistSnapshot(lifecycle: .completed) }
         startSync()
         Task { await finalize(id) }
@@ -310,7 +325,7 @@ final class AssistController {
 
     /// Every finished line is sent at the next pause.
     private func consider(_ segment: TranscriptSegment, in id: String) {
-        guard autoAnswer, segment.speaker != "You" || sendsOwnVoice else { return }
+        guard autoAnswer, segment.speaker != ScreenAnswer.speaker, segment.speaker != "You" || sendsOwnVoice else { return }
         guard turn.add(segment.text) else { return }
         heardQuestion = turn.text
         sendHeard(in: id)
@@ -345,6 +360,12 @@ final class AssistController {
     // MARK: Automatic recovery
 
     /// Keeps trying to bring listening back, a little less often each time.
+    private func announceOutage(_ message: String) {
+        guard Recovery.shouldAnnounce(last: lastOutageNotice, now: Date()) else { return }
+        lastOutageNotice = Date()
+        onError(BackendError(message))
+    }
+
     private func recoverAutomatically(_ id: String) {
         retryTask?.cancel()
         retryTask = Task { [weak self] in
@@ -379,7 +400,8 @@ final class AssistController {
             self?.transcription.send(frame)
             self?.level = AudioLevel.of(frame)
         }
-        if settings.captureMicrophone && !capturingMicrophone {
+        if settings.captureMicrophone && !capturingMicrophone && !microphoneNoticeShown {
+            microphoneNoticeShown = true
             onError(BackendError("Your microphone is unavailable, so Expo is capturing computer audio only."))
         }
     }
@@ -404,17 +426,18 @@ final class AssistController {
             source: result.source, channelIndex: result.channelIndex
         )
         guard fromMicrophone else { keep(segment, in: id); return }
+        let spoken = result.speechSeconds
         // Computer output can arrive after its echo on the microphone, so give it
         // a moment to land before deciding the line is the user's own.
         let key = UUID()
         heldSegments[key] = Task { [weak self] in
             try? await Task.sleep(for: MicrophoneEcho.hold)
-            self?.keep(segment, in: id)
+            self?.keep(segment, in: id, spoken: spoken)
             self?.heldSegments[key] = nil
         }
     }
 
-    private func keep(_ segment: TranscriptSegment, in id: String) {
+    private func keep(_ segment: TranscriptSegment, in id: String, spoken: Double? = nil) {
         var changed = false
         var added = false
         store.updateSession(id) { session in
@@ -429,6 +452,14 @@ final class AssistController {
                 session.transcript.append(segment)
                 changed = true
                 added = true
+            }
+        }
+        if added, let spoken, let title = store.session(id)?.title, PracticeSession.isPractice(title) {
+            store.update {
+                var timing = $0.speechTimings?[id] ?? SpeechTiming()
+                timing.seconds += spoken
+                timing.words += PracticeReview.words(segment.text).count
+                $0.speechTimings = ($0.speechTimings ?? [:]).merging([id: timing]) { $1 }
             }
         }
         if changed {
@@ -465,7 +496,7 @@ final class AssistController {
             await stopCapture()
             guard isCurrent(id, expected) else { return }
             set { $0.connection = .offline; $0.audio = .unavailable; $0.error = message; $0.recoveryAttempt = nil }
-            onError(BackendError(message))
+            announceOutage(message)
             if !failure.permanent { recoverAutomatically(id) }
         }
     }
@@ -490,8 +521,8 @@ final class AssistController {
         }
         guard let health = audio.health, !recovering, snapshot.recoveryAttempt == nil else { return }
         audio.reviveMicrophoneIfNeeded()
-        if health.secondsSinceFrame > 6 {
-            // The output device changed or stalled: rebuild the capture.
+        if audio.stalled {
+            // The output device changed or capture stopped: rebuild it.
             recovering = true
             Task { await recoverAudio(id) }
         } else if store.state.settings.warnOnSilence && health.secondsSinceSound > 45 {
@@ -519,10 +550,10 @@ final class AssistController {
             },
             operation: {
                 capturingMicrophone = try await audio.start(settings: store.state.settings) { [weak self] in self?.transcription.send($0) }
-                // Started is not enough: audio has to keep arriving.
+                // Started is not enough: a microphone has to keep delivering.
                 try await Task.sleep(for: .seconds(2))
                 guard current() else { return }
-                guard let health = audio.health, health.secondsSinceFrame < 1.5 else {
+                guard audio.microphoneDelivering else {
                     audio.stop()
                     level = 0
                     throw AudioCaptureError(message: "No audio is arriving from this device.")
@@ -541,7 +572,7 @@ final class AssistController {
             let message = "Expo could not restore audio. Your session is still open and its history is preserved. \(reason) "
                 + (permanent ? "Then choose Retry listening." : "Expo keeps trying automatically.")
             set { $0.audio = .unavailable; $0.error = message; $0.recoveryAttempt = nil; $0.recoveryMaxAttempts = nil }
-            onError(BackendError(message))
+            announceOutage(message)
             if !permanent { recoverAutomatically(id) }
         }
     }
@@ -642,6 +673,27 @@ final class AssistController {
 
     func stopAnswer() { askTask?.cancel() }
 
+    /// Captures the screen and answers what is on it, with nothing to type.
+    /// It takes over from an answer being written.
+    func captureAndAnswer(sourceID: String? = nil, source: String = "the entire screen") {
+        let previous = askTask
+        previous?.cancel()
+        askTask = Task {
+            await previous?.value
+            await ask(ScreenAnswer.request, label: ScreenAnswer.label, withScreen: true, sourceID: sourceID,
+                      format: ScreenAnswer.format(plainEnglish: store.state.settings.plainEnglish), noteSource: source)
+        }
+    }
+
+    /// Records in the transcript that the screen was captured and answered.
+    private func noteCapture(_ answer: String, source: String, in id: String) {
+        let segment = TranscriptSegment(
+            id: UUID().uuidString.lowercased(), at: clock(snapshot.elapsedSeconds), speaker: ScreenAnswer.speaker,
+            text: ScreenAnswer.transcriptNote(source: source, answer: answer), confidence: "high")
+        store.updateSession(id) { $0.transcript.append(segment) }
+        Task { await flush(id) }
+    }
+
     /// A stopped answer keeps whatever had already arrived.
     private func keepStopped(_ question: String, in id: String) {
         let partial = streamedText.trimmed
@@ -654,7 +706,8 @@ final class AssistController {
     }
 
     /// `label` is what the conversation shows when the sent text is a long follow-up.
-    func ask(_ question: String, label: String? = nil, withScreen: Bool = false, sourceID: String? = nil) async {
+    func ask(_ question: String, label: String? = nil, withScreen: Bool = false, sourceID: String? = nil,
+             format: String? = nil, noteSource: String? = nil) async {
         let question = question.trimmed
         guard !question.isEmpty else {
             if withScreen { onError(BackendError("Enter a question before asking with screen context.")) }
@@ -669,14 +722,19 @@ final class AssistController {
             }
             isAsking = true
             pendingQuestion = label ?? question
+            pendingScreen = withScreen
             streamedText = ""
-            defer { isAsking = false }
+            defer { isAsking = false; pendingScreen = false }
             let image = withScreen ? try await ScreenContextCapture.capture(sourceID: sourceID) : nil
-            var answer = try await backend.ask(sessionId: id, question: question, screenImage: image) { [weak self] delta in
+            // The chosen style shapes questions; named follow-ups say their own.
+            let format = format ?? (label == nil ? answerFormat : nil)
+            var answer = try await backend.ask(sessionId: id, question: question, screenImage: image, format: format) { [weak self] delta in
                 await self?.appendDelta(delta, session: id)
             }
             if let label { answer.question = label }
+            if let image { screenshots[answer.id] = image }
             record(answer, in: id)
+            if let noteSource { noteCapture(answer.summary, source: noteSource, in: id) }
             pendingQuestion = nil
             streamedText = ""
         } catch where Task.isCancelled {
@@ -689,6 +747,11 @@ final class AssistController {
             pendingQuestion = nil
             onError(BackendError(error.localizedDescription))
         }
+    }
+
+    private var answerFormat: String? {
+        let settings = store.state.settings
+        return settings.answerStyle.instruction(plainEnglish: settings.plainEnglish)
     }
 
     private func appendDelta(_ delta: String, session id: String) {
@@ -705,7 +768,8 @@ final class AssistController {
         }
         isAsking = true
         do {
-            upsert(try await backend.createSuggestion(sessionId: id, instruction: nil))
+            let instruction = answerFormat.map { "Suggest the best response for the user to say next in the meeting. \($0)" }
+            upsert(try await backend.createSuggestion(sessionId: id, instruction: instruction))
             isAsking = false
         } catch let error as BackendError where error.isPaywall {
             isAsking = false
@@ -814,7 +878,10 @@ final class AssistController {
         finalizing = true
         guard await flush(id) else { finalizing = false; return }
         do {
-            _ = try await backend.updateSession(id, .init(status: "complete", endedAt: endedAt, durationSeconds: session.durationSeconds))
+            // The email choice goes with completion, so it is in place before
+            // the notes are written even if it was changed while offline.
+            _ = try await backend.updateSession(id, .init(status: "complete", endedAt: endedAt, durationSeconds: session.durationSeconds,
+                                                          emailNotes: session.emailNotes))
         } catch let error as BackendError where !error.isTransient {
             store.updateSession(id) { $0.status = "complete"; $0.notesStatus = "failed"; $0.notesError = error.message }
             finalizing = false

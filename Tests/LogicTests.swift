@@ -132,6 +132,120 @@ struct LogicTests {
 
         check(CvRules.problem(name: "cv.txt", size: 10) != nil && CvRules.problem(name: "cv.PDF", size: 10) == nil, "cv: type rules")
 
+        check(AnswerStyle.standard.instruction(plainEnglish: false) == nil, "style: the default says nothing extra")
+        check(AnswerStyle.bullets.instruction(plainEnglish: true)?.contains("bullet") == true
+              && AnswerStyle.bullets.instruction(plainEnglish: true)?.contains("simple") == true, "style: style and simple English combine")
+        check(AnswerStyle.allCases.allSatisfy { ($0.instruction(plainEnglish: true) ?? "").count <= 300 }, "style: fits the server limit")
+        check((try? JSONDecoder().decode(ExpoSettings.self, from: Data(#"{"answerStyle":"later"}"#.utf8)))?.answerStyle == .standard, "style: unknown value falls back")
+
+        let migrated = try? JSONDecoder().decode(ExpoSettings.self, from: Data(#"{"savedBrief":"Panel interview"}"#.utf8))
+        check(migrated?.profiles.map(\.details) == ["Panel interview"] && migrated?.lastProfileID == migrated?.profiles.first?.id, "profiles: the old saved brief becomes a profile")
+        let again = migrated.flatMap { try? JSONDecoder().decode(ExpoSettings.self, from: JSONEncoder().encode($0)) }
+        check(again?.profiles == migrated?.profiles, "profiles: survive saving")
+        var profiles: [SavedProfile] = []
+        check(!profiles.save(SavedProfile(name: " ", details: "x")) && !profiles.save(SavedProfile(name: "x", details: "")), "profiles: need a name and notes")
+        var first = SavedProfile(name: "Acme", details: "Role")
+        profiles.save(first); first.details = "New role"; profiles.save(first)
+        check(profiles.count == 1 && profiles[0].details == "New role", "profiles: saving again replaces")
+        for n in 0..<40 { profiles.save(SavedProfile(name: "\(n)", details: "d")) }
+        check(profiles.count == SavedProfile.limit, "profiles: the list is bounded")
+
+        let began = ISO.now(), base = ISO.date(began)!
+        var practised = ExpoSession(id: "p", title: "Practice · Interview", startedAt: began, status: "complete")
+        practised.transcript = [
+            segment("You", "00:02", "Tell me about yourself"),
+            segment("You", "00:12", "Um, I basically build apps, you know, you know"),
+            segment("Meeting", "00:15", "Interesting"),
+            segment("You", "00:40", "My strength is focus"),
+        ]
+        practised.assistantMessages = [
+            AssistantMessage(id: "a", question: "Tell me about yourself", summary: "I am a developer.", references: [], confidence: "medium", createdAt: ISO.string(base + 5)),
+            AssistantMessage(id: "b", question: "What is your strength", summary: "Focus.", references: [], confidence: "medium", createdAt: ISO.string(base + 30)),
+        ]
+        let review = PracticeReview(session: practised)
+        check(review.wordCount == 17, "review: counts only your words")
+        check(review.fillers.first == .init(phrase: "you know", count: 2) && review.fillerCount == 4, "review: counts filler phrases")
+        check(review.exchanges.map(\.reply) == ["Um, I basically build apps, you know, you know", "My strength is focus"], "review: pairs replies with answers")
+        check(SpeechTiming(seconds: 30, words: 70).wordsPerMinute == 140 && SpeechTiming(seconds: 3, words: 9).wordsPerMinute == nil, "review: pace needs enough speech")
+        check(PracticeReview.coachingRequest.count <= 1_000 && PracticeReview.coachingFormat.count <= 300, "review: feedback request fits the limits")
+
+        check(!Recovery.captureStalled(outputChanged: false, microphone: false, secondsSinceSystem: 600, secondsSinceMicrophone: 600), "audio: a quiet Mac is not a fault")
+        check(!Recovery.captureStalled(outputChanged: false, microphone: true, secondsSinceSystem: 600, secondsSinceMicrophone: 0.2), "audio: speaking into a quiet Mac is not a fault")
+        check(Recovery.captureStalled(outputChanged: false, microphone: true, secondsSinceSystem: 20, secondsSinceMicrophone: 20), "audio: a dead microphone and output rebuild capture")
+        check(Recovery.captureStalled(outputChanged: true, microphone: false, secondsSinceSystem: 0, secondsSinceMicrophone: 0), "audio: new speakers rebuild capture")
+        let now = Date()
+        check(Recovery.shouldAnnounce(last: nil, now: now) && !Recovery.shouldAnnounce(last: now - 30, now: now) && Recovery.shouldAnnounce(last: now - 400, now: now), "audio: one alert per outage")
+
+        let fenced = MarkdownBlock.parse("Intro\n1. Step\n   ```js\n   if (a) {\n     b()\n   }\n   ```\nAfter")
+        check(fenced == [.paragraph("Intro"), .bullet(mark: "1.", text: "Step"), .code(language: "js", text: "if (a) {\n  b()\n}"), .paragraph("After")], "markdown: code keeps its language and indentation")
+        check(MarkdownBlock.parse("```\nx") == [.code(language: "", text: "x")], "markdown: a streaming fence is code")
+        let source = "const a = \"hi // not\" // note\nfoo(42) it's"
+        let spans = CodeHighlighter.spans(source, language: "js")
+        check(spans.map(\.text).joined() == source, "code: colouring never changes the text")
+        func kind(_ text: String) -> CodeHighlighter.Kind? { spans.first { $0.text == text }?.kind }
+        check(kind("const") == .keyword && kind("\"hi // not\"") == .string && kind("// note") == .comment && kind("foo") == .call && kind("42") == .number, "code: names the parts")
+        check(CodeHighlighter.spans("# a\nx = 1", language: "python").first == .init(text: "# a", kind: .comment), "code: hash comments")
+        for edge in ["\"", "/* open", "'a\\", "`t", ""] {
+            check(CodeHighlighter.spans(edge, language: "ts").map(\.text).joined() == edge, "code: unfinished input \(edge.debugDescription)")
+        }
+
+        let reply = "**1. What is JavaScript?**\nA language.\n2. **var, let and const**\n```js\n# not a title\n```\n### 3. Types"
+        check(ScreenAnswer.titles(reply) == ["1. What is JavaScript?", "2. var, let and const", "3. Types"], "screen: finds the questions answered")
+        check(ScreenAnswer.transcriptNote(source: "the entire screen", answer: reply).hasPrefix("Captured the entire screen and answered it. 1."), "screen: transcript line")
+        check(ScreenAnswer.request.count <= 1_000 && ScreenAnswer.format(plainEnglish: true).count <= 300, "screen: request fits the limits")
+        check(SeeThrough.allCases.allSatisfy { $0.card >= 0.75 }, "glass: cards stay readable")
+
+        let area = CGRect(x: 0, y: 0, width: 1_400, height: 900), box = CGRect(x: 300, y: 350, width: 690, height: 500)
+        func drag(_ edges: SessionFrame.Edges, _ x: CGFloat, _ y: CGFloat) -> CGRect { SessionFrame.resized(box, edges: edges, travel: CGSize(width: x, height: y), within: area) }
+        check(drag(.right, 100, 40) == CGRect(x: 300, y: 350, width: 790, height: 500), "window: right edge widens only")
+        check(drag(.left, -100, 0) == CGRect(x: 200, y: 350, width: 790, height: 500), "window: left edge keeps the right side")
+        check(drag(.bottom, 80, -100) == CGRect(x: 300, y: 250, width: 690, height: 600), "window: bottom edge keeps the top")
+        check(drag([.right, .bottom], 100, -50) == CGRect(x: 300, y: 300, width: 790, height: 550), "window: a corner does both")
+        check(drag(.right, -900, 0).width == SessionFrame.minimumWidth && drag(.left, 900, 0).maxX == box.maxX && drag(.left, 900, 0).width == SessionFrame.minimumWidth, "window: never narrower than the tools")
+        check(drag(.bottom, 0, 900).height == SessionFrame.minimumHeight && drag(.bottom, 0, 900).maxY == box.maxY, "window: never shorter than the minimum")
+        check(drag(.right, 5_000, 0).maxX == area.maxX && drag(.bottom, 0, -5_000).minY == 0, "window: stays on screen")
+        let placed = SessionFrame.placed(topLeft: CGPoint(x: 1_300, y: 60), size: CGSize(width: 690, height: 500), within: area)
+        check(area.contains(placed) && placed.size == CGSize(width: 690, height: 500), "window: a remembered place off screen is brought back")
+        check(SessionFrame.placed(topLeft: .zero, size: CGSize(width: 3_000, height: 3_000), within: area) == area, "window: never larger than the screen")
+
+        check(SessionFrame.toggled(SessionFrame.usual, open: true, previous: nil) == SessionFrame.small, "size: shrinks to small")
+        check(SessionFrame.toggled(SessionFrame.small, open: true, previous: CGSize(width: 900, height: 700)) == CGSize(width: 900, height: 700), "size: restores the size from before")
+        check(SessionFrame.toggled(SessionFrame.small, open: true, previous: nil) == SessionFrame.usual && SessionFrame.toggled(SessionFrame.small, open: true, previous: SessionFrame.small) == SessionFrame.usual, "size: with nothing to restore, the usual size")
+        check(SessionFrame.isSmall(CGSize(width: 560, height: 900), open: false) && !SessionFrame.isSmall(CGSize(width: 560, height: 900), open: true), "size: closed, only the width counts")
+        check((try? JSONDecoder().decode(ExpoSettings.self, from: Data("{}".utf8)))?.emailNotes == true, "email: on unless turned off")
+        check((try? JSONDecoder().decode(ExpoSettings.self, from: Data(#"{"emailNotes":false}"#.utf8)))?.emailNotes == false, "email: the choice is kept")
+        check(!BillingSummary(features: nil, plan: "free", enforced: false, periodEnd: nil, usage: nil).emailsNotes && BillingSummary(features: nil, plan: "starter", enforced: false, periodEnd: nil, usage: nil).emailsNotes, "email: included on paid plans")
+
+        var view = SessionLayout()
+        check(!view.chatOpen && !view.compact, "session: begins as the input alone")
+        view.answerArrived()
+        check(view.chatOpen, "session: a first answer opens the chat")
+        view.hideChat(); view.answerArrived()
+        check(!view.chatOpen, "session: a hidden chat stays hidden when answers arrive")
+        view.asked()
+        check(view.chatOpen && view.jumps == 1, "session: asking opens the chat at the newest message")
+        view.minimize(answers: 3); view.answerArrived()
+        check(view.compact && view.answersAtMinimize == 3, "session: made small, answers do not open it")
+        view.expand()
+        check(!view.compact && view.chatOpen, "session: expanding returns to how it was")
+        view.minimize(answers: 0); view.showChat()
+        check(!view.compact && view.chatOpen, "session: show chat opens it from small")
+        view.makeRoom(false); view.answerArrived()
+        check(view.chatOpen, "session: options closing does not count as hiding the chat")
+
+        var follow = ScrollFollow()
+        check(follow.following, "scroll: follows from the start")
+        follow.scrolled(distanceFromEnd: 6, towardStart: true)
+        check(!follow.following, "scroll: the smallest scroll up stops following")
+        follow.scrolled(distanceFromEnd: 300, towardStart: false)
+        check(!follow.following, "scroll: scrolling down part of the way does not resume")
+        follow.scrolled(distanceFromEnd: 12, towardStart: false)
+        check(follow.following, "scroll: returning near the end resumes")
+        follow.scrolled(distanceFromEnd: -20, towardStart: true)
+        check(follow.following, "scroll: a bounce at the end keeps following")
+        follow.scrolled(distanceFromEnd: 200, towardStart: true); follow.jump()
+        check(follow.following, "scroll: Latest resumes")
+
         print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
         exit(failures == 0 ? 0 : 1)
     }

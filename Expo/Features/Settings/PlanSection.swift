@@ -69,8 +69,8 @@ struct PlanSection: View {
             .multilineTextAlignment(.leading)
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 216, alignment: .topLeading)
-            .background(isChosen ? Theme.surface : Theme.subtle, in: .rect(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).stroke(isChosen ? Theme.accent : Theme.border, lineWidth: isChosen ? 2 : 1) }
+            .background(isChosen ? Theme.surface : Theme.subtle, in: .rect(cornerRadius: 20))
+            .overlay { RoundedRectangle(cornerRadius: 20).stroke(isChosen ? Theme.accent : Theme.border, lineWidth: isChosen ? 2 : 1) }
             .shadow(color: .black.opacity(isChosen ? 0.1 : 0), radius: 8, y: 4)
             .offset(y: isChosen ? -2 : 0)
             .contentShape(.rect)

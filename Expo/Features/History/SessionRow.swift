@@ -46,7 +46,7 @@ struct SessionRow: View {
         }
         .padding(.vertical, 11)
         .padding(.horizontal, 8)
-        .background(hovering ? Theme.subtle : .clear, in: .rect(cornerRadius: 10))
+        .background(hovering ? Theme.subtle : .clear, in: .rect(cornerRadius: 16))
         .contentShape(.rect)
         .onTapGesture(perform: action)
         .onHover { hovering = $0 }

@@ -64,7 +64,7 @@ private struct PrivacySwitchButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.snappy(duration: 0.22), value: privacy)
-        .help(privacy == .unavailable ? privacy.detail : "\(privacy.detail). Click to \(privacy.isHidden ? "show" : "hide").")
+        .hint(privacy == .unavailable ? privacy.detail : "\(privacy.detail). Click to \(privacy.isHidden ? "show" : "hide").")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Hide from screen sharing")
         .accessibilityValue(privacy.detail)
@@ -81,8 +81,8 @@ private struct PrivacySwitchButton: View {
         .padding(.leading, 6)
         .padding(.trailing, 5)
         .frame(height: 28)
-        .background(hovering ? Theme.subtle : Theme.surface, in: .rect(cornerRadius: 9))
-        .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.border) }
+        .background(hovering ? Theme.subtle : Theme.surface, in: .rect(cornerRadius: 15))
+        .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(Theme.border) }
         .fixedSize()
     }
 
@@ -99,8 +99,8 @@ private struct PrivacySwitchButton: View {
         .padding(.leading, compact ? 8 : 10)
         .padding(.trailing, compact ? 9 : 12)
         .frame(maxWidth: .infinity, minHeight: compact ? 50 : 60)
-        .background(hovering ? Theme.subtle : Theme.surface, in: .rect(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).stroke(privacy.isHidden ? Theme.border : Theme.warning.opacity(0.4)) }
+        .background(hovering ? Theme.subtle : Theme.surface, in: .rect(cornerRadius: 18))
+        .overlay { RoundedRectangle(cornerRadius: 18).stroke(privacy.isHidden ? Theme.border : Theme.warning.opacity(0.4)) }
     }
 
     private var explanation: some View {

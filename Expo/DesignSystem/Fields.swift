@@ -26,8 +26,8 @@ struct Field: View {
             .font(.system(size: 12.5))
             .padding(.horizontal, 9)
             .padding(.vertical, 6.5)
-            .background(disabled ? Theme.subtle : Theme.surface, in: .rect(cornerRadius: 9))
-            .overlay { RoundedRectangle(cornerRadius: 9).stroke(Theme.border) }
+            .background(disabled ? Theme.subtle : Theme.surface, in: .rect(cornerRadius: 15))
+            .overlay { RoundedRectangle(cornerRadius: 15).stroke(Theme.border) }
             .disabled(disabled)
             .accessibilityLabel(label)
             .onChange(of: text) {

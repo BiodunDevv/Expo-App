@@ -1,6 +1,6 @@
 import Foundation
 
-/// How loud a moment of audio is, from 0 to 1, for the voice orb.
+/// How loud a moment of audio is, from 0 to 1, for the voice ring.
 enum AudioLevel {
     /// `frame` holds little-endian 16-bit samples.
     static func of(_ frame: Data) -> Double {

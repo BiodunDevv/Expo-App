@@ -22,6 +22,7 @@ final class AudioCaptureService {
     private var engine: AVAudioEngine?
     private var pipeline: Pipeline?
     private var forwarder: Task<Void, Never>?
+    private var heartbeat: Task<Void, Never>?
     private var configurationObserver: NSObjectProtocol?
     private var microphoneWanted = false
     private var microphoneStarted = ContinuousClock.now
@@ -67,6 +68,13 @@ final class AudioCaptureService {
         forwarder = Task {
             for await frame in stream { onFrame(frame) }
         }
+        let queue = queue
+        heartbeat = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                queue.async { pipeline.keepAlive() }
+            }
+        }
         do {
             try tap.start(processIDs: processIDs) { pipeline.system($0) }
         } catch {
@@ -83,6 +91,8 @@ final class AudioCaptureService {
         microphoneWanted = false
         stopMicrophone()
         tap.stop()
+        heartbeat?.cancel()
+        heartbeat = nil
         pipeline?.finish()
         pipeline = nil
         forwarder?.cancel()
@@ -90,6 +100,17 @@ final class AudioCaptureService {
     }
 
     var health: AudioHealth? { pipeline?.health }
+
+    /// See `Recovery.captureStalled`.
+    var stalled: Bool {
+        guard let health else { return false }
+        return Recovery.captureStalled(outputChanged: tap.outputChanged, microphone: microphoneWanted,
+                                       secondsSinceSystem: health.secondsSinceFrame,
+                                       secondsSinceMicrophone: health.secondsSinceMicrophone)
+    }
+
+    /// A requested microphone has to be delivering for capture to count as back.
+    var microphoneDelivering: Bool { !microphoneWanted || (health?.secondsSinceMicrophone ?? .infinity) < 1.5 }
 
     /// Another app (a meeting joining or leaving, a headset connecting) can
     /// reconfigure the microphone and silently stop it. This brings it back.
@@ -159,9 +180,12 @@ private final class Pipeline: @unchecked Sendable {
     private var lastSound = ContinuousClock.now
     private var lastSystemSound: ContinuousClock.Instant?
     private var lastMicrophone = ContinuousClock.now
+    private var lastOutput = ContinuousClock.now
+    private let silence: Data
 
     init(includeMicrophone: Bool, output: AsyncStream<Data>.Continuation) {
         mixer = PCMFrameMixer(includeMicrophone: includeMicrophone)
+        silence = Data(count: PCMFrameMixer.samplesPerFrame * (includeMicrophone ? 2 : 1) * MemoryLayout<Int16>.size)
         self.output = output
     }
 
@@ -176,13 +200,25 @@ private final class Pipeline: @unchecked Sendable {
 
     func system(_ samples: [Float]) {
         mark(samples, countsAsFrame: true)
-        mixer.pushSystem(PCMFrameMixer.pcm(samples)).forEach { output.yield($0) }
+        send(mixer.pushSystem(PCMFrameMixer.pcm(samples)))
     }
 
     func microphone(_ samples: [Float]) {
         lock.withLock { lastMicrophone = .now }
         mark(samples, countsAsFrame: false)
-        mixer.pushMicrophone(PCMFrameMixer.pcm(samples)).forEach { output.yield($0) }
+        send(mixer.pushMicrophone(PCMFrameMixer.pcm(samples)))
+    }
+
+    /// Transcription drops a connection that hears nothing, so a quiet Mac
+    /// still sends a little silence. Called on the capture queue.
+    func keepAlive() {
+        if ContinuousClock.now - lastOutput > .seconds(1) { send([silence]) }
+    }
+
+    private func send(_ frames: [Data]) {
+        guard !frames.isEmpty else { return }
+        lastOutput = .now
+        frames.forEach { output.yield($0) }
     }
 
     func finish() { output.finish() }

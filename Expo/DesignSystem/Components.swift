@@ -23,7 +23,7 @@ struct Tag: View {
             .foregroundStyle(colors.0)
             .padding(.horizontal, 8)
             .frame(height: 19)
-            .background(colors.1, in: .rect(cornerRadius: 5))
+            .background(colors.1, in: .rect(cornerRadius: 7))
     }
 }
 
@@ -67,8 +67,8 @@ struct Card<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Theme.surface, in: .rect(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).stroke(Theme.border) }
+        .background(Theme.surface, in: .rect(cornerRadius: 18))
+        .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.border) }
     }
 }
 
@@ -145,8 +145,8 @@ struct ToastStack: View {
                 }
                 .padding(12)
                 .frame(maxWidth: 420, alignment: .leading)
-                .background(Theme.surface, in: .rect(cornerRadius: 12))
-                .overlay { RoundedRectangle(cornerRadius: 12).stroke(Theme.border) }
+                .background(Theme.surface, in: .rect(cornerRadius: 18))
+                .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.border) }
                 .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
             }
         }

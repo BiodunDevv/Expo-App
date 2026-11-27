@@ -5,6 +5,30 @@ private final class OverlayPanel: NSPanel {
     var acceptsKeyboard = false
     override var canBecomeKey: Bool { acceptsKeyboard }
     override var canBecomeMain: Bool { false }
+
+    /// While Expo is hidden from screen sharing, its windows are invisible to
+    /// others, so the pointer must not change shape over them and give them away.
+    var plainPointer = false {
+        didSet {
+            guard plainPointer != oldValue else { return }
+            if plainPointer { disableCursorRects(); NSCursor.arrow.set() } else { enableCursorRects() }
+        }
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        guard plainPointer else { return super.sendEvent(event) }
+        switch event.type {
+        case .cursorUpdate:
+            NSCursor.arrow.set()
+        case .mouseMoved, .mouseEntered, .mouseExited, .leftMouseDown, .leftMouseUp, .leftMouseDragged:
+            super.sendEvent(event)
+            NSCursor.arrow.set()
+            // Text views set their own pointer a moment later.
+            DispatchQueue.main.async { NSCursor.arrow.set() }
+        default:
+            super.sendEvent(event)
+        }
+    }
 }
 
 /// Floating controls respond to the first click while another app is active.
@@ -12,17 +36,17 @@ private final class FirstClickHostingView<Content: View>: NSHostingView<Content>
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// Owns the launcher, Assist dock, and assistant response windows, and applies
+/// Owns the floating bot, its chooser and the session window, and applies
 /// screen-capture privacy to every Expo window.
 @MainActor
 final class OverlayController {
-    enum Part { case launcher, dock, assistant }
+    enum Part { case launcher, chooser, session }
 
     private unowned let model: AppModel
     private var launcher: OverlayPanel?
-    private var dock: OverlayPanel?
-    private var assistant: OverlayPanel?
-    private var idleDockOpen = false
+    private var chooser: OverlayPanel?
+    private var session: OverlayPanel?
+    private var chooserOpen = false
     private var hidden = true
     var onReplaceWindows: () -> Void = {}
     var onProtectionFailure: () -> Void = {}
@@ -31,22 +55,15 @@ final class OverlayController {
     private var observers: [NSObjectProtocol] = []
 
     private static let launcherSize = NSSize(width: 64, height: 64)
-    /// The bar and the conversation under it share one width.
-    private static let wideWidth: CGFloat = 700
-    private static let narrowWidth: CGFloat = 480
-    /// The bar draws its card this far inside its window.
-    private static let barInset: CGFloat = 6
-    private static let glanceHeight: CGFloat = 340
-    private static let minimumHeight: CGFloat = 300
-    private static let idleDockSize = NSSize(width: 360, height: 262)
-    private static let signedOutDockSize = NSSize(width: 340, height: 160)
-    private static let miniDockSize = NSSize(width: 236, height: 68)
-    private static let shortHeight: CGFloat = 430
-    private var barWidth: CGFloat { model.panelCompact ? Self.narrowWidth : Self.wideWidth }
-    private var activeDockSize: NSSize { NSSize(width: barWidth, height: Self.barHeight) }
-    private var heightKey: String { "assistantPanelHeight.\(model.state.account?.id ?? "none")" }
+    private static let chooserSize = NSSize(width: 360, height: 262)
+    private static let signedOutSize = NSSize(width: 340, height: 160)
     private var wasActive = false
-    private static let barHeight: CGFloat = 68
+    /// The input row and toolbar, as the view last measured them.
+    private var closedHeight: CGFloat = 104
+    /// Whether the session window is laid out as the small note.
+    private var showingCompact = false
+    /// Where an animation is taking the session window.
+    private var target: NSRect?
 
     init(model: AppModel) {
         self.model = model
@@ -54,12 +71,13 @@ final class OverlayController {
         observe(NSApplication.didChangeScreenParametersNotification) { controller, _ in controller.clampAll() }
         // Sheets, popovers and dialogs are new windows: protect them as they appear.
         observe(NSApplication.didUpdateNotification) { controller, _ in NSApp.windows.forEach(controller.protect) }
-        observe(NSWindow.didEndLiveResizeNotification) { controller, window in
-            guard window === controller.assistant, let height = window?.frame.height else { return }
-            if !controller.model.glanceMode && !controller.model.panelCompact {
-                UserDefaults.standard.set(Double(height), forKey: controller.heightKey)
+        // Menus open their own windows, which exist one turn of the run loop later.
+        observe(NSMenu.didBeginTrackingNotification) { controller, _ in
+            RunLoop.main.perform(inModes: [.common, .eventTracking]) { [weak controller] in
+                MainActor.assumeIsolated {
+                    if let controller { NSApp.windows.forEach(controller.protect) }
+                }
             }
-            controller.layoutStack()
         }
     }
 
@@ -70,14 +88,6 @@ final class OverlayController {
                 if let self { action(self, object as? NSWindow) }
             }
         })
-    }
-
-    /// The conversation's height: the person's choice for the usual size.
-    private var panelHeight: CGFloat {
-        if model.glanceMode { return Self.glanceHeight }
-        if model.panelCompact { return Self.shortHeight }
-        let saved = UserDefaults.standard.double(forKey: heightKey)
-        return saved >= Self.minimumHeight ? saved : 600
     }
 
     /// Reads back from the window server, which is what capture tools see. True
@@ -133,15 +143,13 @@ final class OverlayController {
     /// Recreates Expo's windows with the current privacy, carrying their content over.
     private func replaceWindows() {
         launcher = launcher.map(replacement)
-        dock = dock.map(replacement)
-        assistant = assistant.map(replacement)
+        chooser = chooser.map(replacement)
+        session = session.map(replacement)
         onReplaceWindows()
     }
 
     private func replacement(for old: OverlayPanel) -> OverlayPanel {
         let panel = blankPanel(frame: old.frame, style: old.styleMask, keyboard: old.acceptsKeyboard)
-        panel.minSize = old.minSize
-        panel.isMovableByWindowBackground = old.isMovableByWindowBackground
         let content = old.contentView
         old.contentView = nil
         panel.contentView = content
@@ -154,117 +162,218 @@ final class OverlayController {
         return panel
     }
 
-    /// Reconciles the visible windows with sign-in and session state. The launcher
-    /// is available before sign-in so screen-share privacy is always in reach.
+    /// Reconciles the visible windows with sign-in and session state. The floating
+    /// bot is available before sign-in so screen-share privacy is always in reach.
     func synchronize() {
         guard model.phase == .ready, model.privacyFailure == nil else {
-            [launcher, dock, assistant].forEach { $0?.orderOut(nil) }
-            idleDockOpen = false
+            [launcher, chooser, session].forEach { $0?.orderOut(nil) }
+            chooserOpen = false
             return
         }
         let active = model.overlaysEligible && model.assist.isActive
-        guard active || model.showsFloatingButton else {
-            [launcher, dock, assistant].forEach { $0?.orderOut(nil) }
-            idleDockOpen = false
-            return
-        }
-        // The floating bot steps aside whenever one of Expo's panels is open.
-        showLauncher(visible: !active && !idleDockOpen)
         defer { wasActive = active }
         if active {
-            showDock(model.dockMinimized ? Self.miniDockSize : activeDockSize)
-            // The conversation opens with the session, under the bar.
-            if !wasActive && !model.dockMinimized { showAssistant() }
-        } else {
-            assistant?.orderOut(nil)
-            if idleDockOpen { showDock(model.overlaysEligible ? Self.idleDockSize : Self.signedOutDockSize) } else { dock?.orderOut(nil) }
+            chooserOpen = false
+            chooser?.orderOut(nil)
+            if model.sessionHidden {
+                session?.orderOut(nil)
+                // The way back to a hidden session, even with the bot switched off.
+                showLauncher(visible: true)
+            } else {
+                showLauncher(visible: false)
+                showSessionWindow(focus: !wasActive)
+            }
+            return
         }
+        session?.orderOut(nil)
+        guard model.showsFloatingButton else {
+            [launcher, chooser].forEach { $0?.orderOut(nil) }
+            chooserOpen = false
+            return
+        }
+        // The bot steps aside while its chooser is open.
+        showLauncher(visible: !chooserOpen)
+        if chooserOpen { showChooser() } else { chooser?.orderOut(nil) }
     }
 
     /// Turns the floating bot off, saying where to find it again.
     func hideFloatingBot() {
-        idleDockOpen = false
+        chooserOpen = false
         model.showsFloatingButton = false
         model.notify("The floating bot is off. Turn it on from the Expo icon in the menu bar, or in Settings.")
     }
 
-    func closeDock() {
-        idleDockOpen = false
+    func closeChooser() {
+        chooserOpen = false
         synchronize()
     }
 
-    /// Folds the Assist bar into a small pill, or opens it again.
-    func setDockMinimized(_ minimized: Bool) {
-        if minimized { hideAssistant() }
-        model.dockMinimized = minimized
+    /// A click on the floating bot.
+    func openFromBot() {
+        if model.overlaysEligible && model.assist.isActive { showAssistant(); return }
+        chooserOpen.toggle()
         synchronize()
-        if !minimized { showAssistant() }
-    }
-
-    func toggleDock() {
-        if model.overlaysEligible && model.assist.isActive { toggleAssistant(); return }
-        idleDockOpen.toggle()
-        synchronize()
-    }
-
-    func toggleAssistant() {
-        if assistant?.isVisible == true { hideAssistant() } else { showAssistant() }
     }
 
     func showAssistant() {
-        guard model.privacyFailure == nil else { model.showMainWindow(); return }
-        guard model.overlaysEligible else { model.showMainWindow(); return }
+        guard model.privacyFailure == nil, model.overlaysEligible else { model.showMainWindow(); return }
         guard model.assist.isActive else {
-            idleDockOpen = true
+            chooserOpen = true
             synchronize()
             return
         }
-        if model.dockMinimized { model.dockMinimized = false }
-        showDock(activeDockSize)
-        let panel = assistant ?? makePanel(size: NSSize(width: barWidth - Self.barInset * 2, height: panelHeight),
-                                           keyboard: true, resizable: true) {
-            AssistantPanelView(overlays: self)
-        }
-        assistant = panel
-        layoutStack(showing: true)
-        panel.makeKeyAndOrderFront(nil)
+        model.sessionHidden = false
+        model.layout.expand()
+        synchronize()
+        layoutSession()
+        session?.makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .expoFocusAsk, object: nil)
     }
 
-    /// Puts the conversation directly under the bar, at the same width. When
-    /// there is no room below, the bar moves up to make some.
-    private func layoutStack(showing: Bool = false) {
-        guard let dock, let panel = assistant, showing || panel.isVisible,
-              let screen = screen(of: dock) else { return }
-        let area = usable(screen)
-        let width = barWidth - Self.barInset * 2
-        let height = min(panelHeight, area.height - dock.frame.height - 4)
-        var bar = dock.frame
-        bar.size.width = barWidth
-        bar.origin.x = min(max(bar.minX, area.minX), area.maxX - bar.width)
-        // The panel's top edge sits just under the bar's card.
-        bar.origin.y = min(max(bar.minY, area.minY + height - Self.barInset + 2), area.maxY - bar.height)
-        if bar != dock.frame { dock.setFrame(bar, display: true) }
-        // Only the height can be dragged; the width follows the bar.
-        panel.minSize = NSSize(width: width, height: min(Self.minimumHeight, height))
-        panel.maxSize = NSSize(width: width, height: area.height - bar.height - 4)
-        panel.setFrame(NSRect(x: bar.minX + Self.barInset, y: bar.minY + Self.barInset - 2 - height, width: width, height: height), display: true)
+    /// Puts the session window away; the floating bot brings it back.
+    func hideAssistant() {
+        model.sessionHidden = true
+        synchronize()
     }
 
-    func hideAssistant() { assistant?.orderOut(nil) }
+    // MARK: Session window
 
-    /// Resizes the conversation for the current view, still under the bar.
-    func fitAssistant() { layoutStack() }
+    private var widthKey: String { "sessionWidth.\(model.state.account?.id ?? "none")" }
+    private var previousKey: String { "sessionPreviousSize.\(model.state.account?.id ?? "none")" }
+    private var heightKey: String { "sessionHeight.\(model.state.account?.id ?? "none")" }
 
-    /// Switches the bar and conversation between a small and the usual size.
-    func toggleAssistantSize() {
-        model.panelCompact.toggle()
-        if let dock, !model.dockMinimized {
-            let old = dock.frame
-            // The right edge stays put, as the controls that were clicked are there.
-            dock.setFrame(NSRect(x: old.maxX - barWidth, y: old.minY, width: barWidth, height: old.height), display: true)
+    private func saved(_ key: String, _ fallback: CGFloat, atLeast minimum: CGFloat) -> CGFloat {
+        let value = UserDefaults.standard.double(forKey: key)
+        return value >= minimum ? value : fallback
+    }
+
+    /// The width of the window when it is not made small.
+    private var fullWidth: CGFloat { saved(widthKey, SessionFrame.defaultWidth, atLeast: SessionFrame.minimumWidth) }
+
+    private var sessionSize: NSSize {
+        if model.layout.compact { return CompactSession.size }
+        return NSSize(width: fullWidth,
+                      height: model.layout.chatOpen ? saved(heightKey, SessionFrame.defaultHeight, atLeast: SessionFrame.minimumHeight) : closedHeight)
+    }
+
+    private func showSessionWindow(focus: Bool) {
+        let panel = session ?? makePanel(size: sessionSize, keyboard: true) { SessionView(overlays: self) }
+        let wasVisible = session?.isVisible == true
+        session = panel
+        layoutSession(showing: true)
+        if !wasVisible || focus {
+            panel.makeKeyAndOrderFront(nil)
+            NotificationCenter.default.post(name: .expoFocusAsk, object: nil)
+        } else {
+            panel.orderFrontRegardless()
         }
-        layoutStack()
+    }
+
+    /// Where the full window's top-left corner is, when the window is at `frame`.
+    /// The small note sits centred under the top of the full window.
+    private func fullTopLeft(of frame: NSRect) -> NSPoint {
+        NSPoint(x: showingCompact ? (frame.midX - fullWidth / 2).rounded() : frame.minX, y: frame.maxY)
+    }
+
+    /// Sizes the window for what it shows. The top edge stays put, so the input
+    /// never moves when the chat opens or closes.
+    private func layoutSession(showing: Bool = false) {
+        guard let panel = session, showing || panel.isVisible else { return }
+        let compact = model.layout.compact
+        let size = sessionSize
+        // Mid-animation the window is between two places; use where it is going.
+        let current = target ?? panel.frame
+        let topLeft: NSPoint
+        if panel.isVisible {
+            if compact == showingCompact { topLeft = NSPoint(x: current.minX, y: current.maxY) }
+            else { topLeft = NSPoint(x: (current.midX - size.width / 2).rounded(), y: current.maxY) }
+        } else {
+            let area = NSScreen.main?.visibleFrame ?? .zero
+            // Near the top of the screen, centred, until the person puts it elsewhere.
+            let full = savedPoint("sessionTopLeft") ?? NSPoint(x: area.midX - fullWidth / 2, y: area.maxY - 12)
+            topLeft = NSPoint(x: compact ? full.x + (fullWidth - size.width) / 2 : full.x, y: full.y)
+        }
+        let probe = NSRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)
+        guard let screen = screen(containing: probe) else { return }
+        let frame = SessionFrame.placed(topLeft: topLeft, size: size, within: usable(screen))
+        // Already on its way there: let the animation finish.
+        if frame == target && compact == showingCompact { return }
+        let changesShape = panel.isVisible && frame != current
+            && (compact != showingCompact || abs(frame.height - current.height) > 40)
+        showingCompact = compact
+        if changesShape && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            animate(panel, to: frame)
+        } else {
+            target = nil
+            panel.setFrame(frame, display: true)
+        }
+        noteSize(frame.size)
+    }
+
+    /// Grows or shrinks the window smoothly.
+    private func animate(_ panel: NSPanel, to frame: NSRect) {
+        target = frame
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                if self?.target == frame { self?.target = nil }
+            }
+        }
+    }
+
+    private func noteSize(_ size: NSSize) {
+        guard !model.layout.compact else { return }
+        let small = SessionFrame.isSmall(size, open: model.layout.chatOpen)
+        if model.sessionIsSmall != small { model.sessionIsSmall = small }
+    }
+
+    /// Switches between the small size and the size the person had before.
+    func toggleSmallSize() {
+        guard session != nil else { return }
+        let current = CGSize(width: saved(widthKey, SessionFrame.defaultWidth, atLeast: SessionFrame.minimumWidth),
+                             height: saved(heightKey, SessionFrame.defaultHeight, atLeast: SessionFrame.minimumHeight))
+        let previous = savedPoint(previousKey).map { CGSize(width: $0.x, height: $0.y) }
+        let next = SessionFrame.toggled(current, open: model.layout.chatOpen, previous: previous)
+        if next == SessionFrame.small { save(NSPoint(x: current.width, y: current.height), previousKey) }
+        UserDefaults.standard.set(Double(next.width), forKey: widthKey)
+        UserDefaults.standard.set(Double(next.height), forKey: heightKey)
+        layoutSession()
+        if let frame = session?.frame { save(NSPoint(x: frame.minX, y: frame.maxY), "sessionTopLeft") }
+    }
+
+    /// The view reports how tall the input and toolbar are on their own.
+    func setClosedHeight(_ height: CGFloat) {
+        guard height > 0, abs(height - closedHeight) > 0.5 else { return }
+        closedHeight = height.rounded(.up)
+        if !model.layout.chatOpen && !model.layout.compact { layoutSession() }
+    }
+
+    func fitSession() { layoutSession() }
+
+    var sessionFrame: NSRect? { session?.frame }
+
+    /// Applies a drag on the window's edges, measured from where it began.
+    func resizeSession(from start: NSRect, edges: SessionFrame.Edges, travel: CGSize) {
+        guard let panel = session, let screen = screen(containing: start) else { return }
+        var edges = edges
+        target = nil
+        // Closed, the height belongs to the content.
+        if !model.layout.chatOpen { edges.remove(.bottom) }
+        var frame = SessionFrame.resized(start, edges: edges, travel: travel, within: usable(screen))
+        if !model.layout.chatOpen { frame.size.height = start.height; frame.origin.y = start.minY }
+        panel.setFrame(frame, display: true)
+        noteSize(frame.size)
+    }
+
+    /// Remembers the size and place the person chose.
+    func finishResize() {
+        guard let frame = session?.frame else { return }
+        UserDefaults.standard.set(Double(frame.width), forKey: widthKey)
+        if model.layout.chatOpen { UserDefaults.standard.set(Double(frame.height), forKey: heightKey) }
+        save(NSPoint(x: frame.minX, y: frame.maxY), "sessionTopLeft")
     }
 
     // MARK: Moving
@@ -272,48 +381,29 @@ final class OverlayController {
     private func panel(_ part: Part) -> OverlayPanel? {
         switch part {
         case .launcher: launcher
-        case .dock: dock
-        case .assistant: assistant
+        case .chooser: chooser
+        case .session: session
         }
     }
 
     func origin(of part: Part) -> NSPoint? { panel(part)?.frame.origin }
 
-    /// Dragging either the bar or the conversation moves both together.
     func move(_ part: Part, to origin: NSPoint) {
-        switch part {
-        case .launcher: launcher?.setFrameOrigin(origin)
-        case .dock:
-            dock?.setFrameOrigin(origin)
-            follow()
-        case .assistant:
-            guard let panel = assistant, let dock else { return }
-            let travel = NSSize(width: origin.x - panel.frame.minX, height: origin.y - panel.frame.minY)
-            panel.setFrameOrigin(origin)
-            dock.setFrameOrigin(NSPoint(x: dock.frame.minX + travel.width, y: dock.frame.minY + travel.height))
-        }
-    }
-
-    /// Keeps the conversation under the bar while it is dragged.
-    private func follow() {
-        guard let dock, let panel = assistant, panel.isVisible else { return }
-        panel.setFrameOrigin(NSPoint(x: dock.frame.minX + Self.barInset, y: dock.frame.minY + Self.barInset - 2 - panel.frame.height))
+        if part == .session { target = nil }
+        panel(part)?.setFrameOrigin(origin)
     }
 
     /// Keeps the window on screen and remembers where it was put.
     func finishMove(_ part: Part) {
+        guard let panel = panel(part) else { return }
+        clamp(panel)
         switch part {
-        case .launcher:
-            guard let launcher else { return }
-            clamp(launcher)
-            save(launcher.frame.origin, "launcherOrigin")
-        case .dock, .assistant:
-            guard let dock else { return }
-            clamp(dock)
-            layoutStack()
-            if model.assist?.isActive == true { save(dock.frame.origin, "dockOrigin") }
-            // The launcher returns where the open chooser was left.
-            else { save(dock.frame.origin, "launcherOrigin"); launcher?.setFrameOrigin(dock.frame.origin) }
+        case .launcher: save(panel.frame.origin, "launcherOrigin")
+        case .session: save(fullTopLeft(of: panel.frame), "sessionTopLeft")
+        case .chooser:
+            // The bot returns where the open chooser was left.
+            save(panel.frame.origin, "launcherOrigin")
+            launcher?.setFrameOrigin(panel.frame.origin)
         }
     }
 
@@ -332,25 +422,20 @@ final class OverlayController {
         if visible { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
     }
 
-    private func showDock(_ size: NSSize) {
-        let panel = dock ?? makePanel(size: size) { DockView(overlays: self) }
-        dock = panel
+    private func showChooser() {
+        let size = model.overlaysEligible ? Self.chooserSize : Self.signedOutSize
+        let panel = chooser ?? makePanel(size: size) { ChooserView(overlays: self) }
+        chooser = panel
         if panel.frame.size != size || !panel.isVisible {
             let wasVisible = panel.isVisible
             let old = panel.frame
             panel.setContentSize(size)
             if wasVisible {
-                // Resizing keeps the bar where the person sees it.
-                panel.setFrameOrigin(NSPoint(x: old.minX, y: old.minY))
+                panel.setFrameOrigin(old.origin)
             } else if let anchor = launcher?.frame, let area = (launcher?.screen ?? NSScreen.main)?.visibleFrame {
-                // Opens over the launcher, extending away from the screen edge.
+                // Opens over the bot, extending away from the screen edge.
                 let x = anchor.midX > area.midX ? anchor.maxX - size.width : anchor.minX
                 panel.setFrameOrigin(NSPoint(x: x, y: anchor.minY - 2))
-                // The Assist bar returns to where it was last dragged.
-                if model.assist?.isActive == true {
-                    // Near the top of the screen until the person puts it elsewhere.
-                    panel.setFrameOrigin(savedPoint("dockOrigin") ?? NSPoint(x: area.midX - size.width / 2, y: area.maxY - size.height - 8))
-                }
             }
         }
         clamp(panel)
@@ -359,9 +444,9 @@ final class OverlayController {
 
     /// Anywhere on whichever screen the window is mostly on, including over the
     /// macOS Dock, but never under the menu bar.
-    private func screen(of panel: NSPanel) -> NSScreen? {
-        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-        return NSScreen.screens.first { $0.frame.contains(center) } ?? panel.screen ?? NSScreen.main
+    private func screen(containing frame: NSRect) -> NSScreen? {
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        return NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main
     }
 
     private func usable(_ screen: NSScreen) -> NSRect {
@@ -369,7 +454,7 @@ final class OverlayController {
     }
 
     private func clamp(_ panel: NSPanel) {
-        guard let screen = screen(of: panel) else { return }
+        guard let screen = screen(containing: panel.frame) else { return }
         let area = usable(screen)
         var frame = panel.frame
         frame.size.width = min(frame.width, area.width - 4)
@@ -380,19 +465,21 @@ final class OverlayController {
     }
 
     private func clampAll() {
-        [launcher, dock].compactMap { $0 }.forEach(clamp)
-        layoutStack()
+        [launcher, chooser, session].compactMap { $0 }.forEach(clamp)
     }
 
     private func blankPanel(frame: NSRect, style: NSWindow.StyleMask, keyboard: Bool) -> OverlayPanel {
         let panel = OverlayPanel(contentRect: frame, styleMask: style, backing: .buffered, defer: false)
         panel.acceptsKeyboard = keyboard
+        panel.plainPointer = hidden
         // Above the macOS Dock, so the controls can be placed anywhere.
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        // Dark glass with light text, whatever the Mac's appearance.
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         // Privacy is applied before the window is ever shown.
@@ -401,11 +488,9 @@ final class OverlayController {
     }
 
     private func makePanel<Content: View>(
-        size: NSSize, keyboard: Bool = false, resizable: Bool = false, @ViewBuilder content: () -> Content
+        size: NSSize, keyboard: Bool = false, @ViewBuilder content: () -> Content
     ) -> OverlayPanel {
-        var style: NSWindow.StyleMask = [.borderless, .nonactivatingPanel]
-        if resizable { style.insert(.resizable) }
-        let panel = blankPanel(frame: NSRect(origin: .zero, size: size), style: style, keyboard: keyboard)
+        let panel = blankPanel(frame: NSRect(origin: .zero, size: size), style: [.borderless, .nonactivatingPanel], keyboard: keyboard)
         let host = FirstClickHostingView(rootView: content().environment(model))
         host.sizingOptions = []
         panel.contentView = host

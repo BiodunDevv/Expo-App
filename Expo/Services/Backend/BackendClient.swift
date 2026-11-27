@@ -47,6 +47,7 @@ struct RemoteSession: Decodable, Sendable {
     var deletedAt: String?
     var contextVersion: Int?
     var profileContextEnabled: Bool?
+    var emailNotes: Bool?
     var transcript: [TranscriptSegment]?
     var assistantMessages: [AssistantMessage]?
     var liveSuggestions: [LiveSuggestion]?
@@ -62,6 +63,8 @@ struct RemoteSession: Decodable, Sendable {
         session.deletedAt = deletedAt ?? session.deletedAt
         session.contextVersion = contextVersion ?? session.contextVersion
         session.profileContextEnabled = profileContextEnabled ?? session.profileContextEnabled
+        // A choice made here and not yet synced is not overwritten.
+        session.emailNotes = session.emailNotes ?? emailNotes
         if let notes { session.notes = notes; session.notesStatus = "ready" }
         if let transcript { session.transcript = Self.merge(session.transcript, transcript) }
         if let assistantMessages { session.assistantMessages = Self.merge(session.assistantMessages, assistantMessages) }
@@ -409,11 +412,11 @@ actor BackendClient {
 
     // MARK: Sessions
 
-    func createSession(title: String, startedAt: String, profileContextEnabled: Bool, prepNotes: String?) async throws -> RemoteSession {
+    func createSession(title: String, startedAt: String, profileContextEnabled: Bool, prepNotes: String?, emailNotes: Bool = true) async throws -> RemoteSession {
         struct Body: Encodable {
-            var title: String; var startedAt: String; var memory: [String: String]; var profileContextEnabled: Bool; var prepNotes: String?
+            var title: String; var startedAt: String; var memory: [String: String]; var profileContextEnabled: Bool; var prepNotes: String?; var emailNotes: Bool
         }
-        let body = Body(title: title, startedAt: startedAt, memory: ["memoryMode": "current_only"], profileContextEnabled: profileContextEnabled, prepNotes: prepNotes)
+        let body = Body(title: title, startedAt: startedAt, memory: ["memoryMode": "current_only"], profileContextEnabled: profileContextEnabled, prepNotes: prepNotes, emailNotes: emailNotes)
         return try await request("/sessions", method: "POST", body: try json(body))
     }
 
@@ -444,6 +447,7 @@ actor BackendClient {
         var durationSeconds: Int?
         var notes: SessionNotes?
         var profileContextEnabled: Bool?
+        var emailNotes: Bool?
     }
 
     func updateSession(_ id: String, _ patch: SessionPatch) async throws -> RemoteSession {
@@ -475,6 +479,13 @@ actor BackendClient {
 
     func requestNotes(_ id: String) async throws {
         let _: Ignored? = try await request("/sessions/\(try safeID(id))/notes", method: "POST", headers: Self.transcriptConsent)
+    }
+
+    /// Sends the notes and transcript now and returns the address used.
+    func emailNotes(_ id: String) async throws -> String {
+        struct Sent: Decodable { var sentTo: String }
+        let sent: Sent = try await request("/sessions/\(try safeID(id))/notes/email", method: "POST", headers: Self.transcriptConsent)
+        return sent.sentTo
     }
 
     func latestNotes(_ id: String) async throws -> NotesDetail {
@@ -515,11 +526,12 @@ actor BackendClient {
         sessionId: String,
         question: String,
         screenImage: String?,
+        format: String? = nil,
         onDelta: @escaping @Sendable (String) async -> Void
     ) async throws -> AssistantMessage {
         struct Screen: Encodable { var imageDataUrl: String }
-        struct Body: Encodable { var question: String; var sessionId: String; var screenContext: Screen? }
-        let body = try json(Body(question: question, sessionId: sessionId, screenContext: screenImage.map(Screen.init)))
+        struct Body: Encodable { var question: String; var sessionId: String; var screenContext: Screen?; var answerFormat: String? }
+        let body = try json(Body(question: question, sessionId: sessionId, screenContext: screenImage.map(Screen.init), answerFormat: format))
         let text: String
         do {
             text = try await stream("/assistant/ask/stream", body: body, onDelta: onDelta)

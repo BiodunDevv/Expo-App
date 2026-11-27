@@ -59,8 +59,8 @@ struct HomeView: View {
         }
         .padding(.leading, 20).padding(.trailing, 8).padding(.vertical, 6)
         .background { Wash() }
-        .clipShape(.rect(cornerRadius: 18))
-        .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.border) }
+        .clipShape(.rect(cornerRadius: 24))
+        .overlay { RoundedRectangle(cornerRadius: 24).stroke(Theme.border) }
     }
 
     /// Counted from what is stored on this Mac.

@@ -56,7 +56,7 @@ struct Sidebar: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.secondary)
-            .help(collapsed ? "Show sidebar (⌘\\)" : "Hide sidebar (⌘\\)")
+            .hint(collapsed ? "Show sidebar (⌘\\)" : "Hide sidebar (⌘\\)")
             .accessibilityLabel("Toggle sidebar")
         }
         .frame(maxWidth: .infinity)
@@ -81,8 +81,8 @@ struct Sidebar: View {
             }
             .padding(8)
             .background { Wash() }
-            .clipShape(.rect(cornerRadius: 12))
-            .overlay { RoundedRectangle(cornerRadius: 12).stroke(Theme.border) }
+            .clipShape(.rect(cornerRadius: 18))
+            .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.border) }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -105,12 +105,12 @@ struct Sidebar: View {
                                 .font(.system(size: 12)).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 9).frame(height: 27)
-                                .background(selected ? Theme.selected : .clear, in: .rect(cornerRadius: 7))
+                                .background(selected ? Theme.selected : .clear, in: .rect(cornerRadius: 11))
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(selected ? Theme.text : Theme.secondary)
-                        .help("\(session.title) · \(ISO.display(session.startedAt))")
+                        .hint("\(session.title) · \(ISO.display(session.startedAt))")
                     }
                 }
             }
@@ -130,7 +130,7 @@ struct Sidebar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(model.capturePrivacy == .unavailable)
-                .help(model.capturePrivacy.detail)
+                .hint(model.capturePrivacy.detail)
                 .accessibilityLabel("Hide from screen sharing")
                 .accessibilityValue(model.capturePrivacy.detail)
             } else {
@@ -200,15 +200,15 @@ private struct SidebarRow<Icon: View>: View {
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: collapsed ? .center : .leading)
-            .background(selected ? Theme.surface : hovering ? Theme.selected.opacity(0.6) : .clear, in: .rect(cornerRadius: 10))
-            .overlay { RoundedRectangle(cornerRadius: 10).stroke(selected ? Theme.border : .clear) }
+            .background(selected ? Theme.surface : hovering ? Theme.selected.opacity(0.6) : .clear, in: .rect(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).stroke(selected ? Theme.border : .clear) }
             .shadow(color: .black.opacity(selected ? 0.06 : 0), radius: 4, y: 2)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .foregroundStyle(selected || prominent ? Theme.text : Theme.secondary)
         .onHover { hovering = $0 }
-        .help(collapsed ? "\(title) (\(shortcut))" : "")
+        .hint(collapsed ? "\(title) (\(shortcut))" : "")
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

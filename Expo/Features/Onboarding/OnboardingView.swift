@@ -41,7 +41,7 @@ struct OnboardingView: View {
                             }
                             .font(.system(size: 12)).foregroundStyle(Theme.danger)
                             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.dangerSoft, in: .rect(cornerRadius: 10))
+                            .background(Theme.dangerSoft, in: .rect(cornerRadius: 16))
                         }
                     }
                     .frame(maxWidth: 520)
@@ -118,7 +118,7 @@ struct OnboardingView: View {
                 Spacer()
             }
             .padding(.horizontal, 8).frame(height: 27)
-            .background(index == step ? Theme.selected : .clear, in: .rect(cornerRadius: 8))
+            .background(index == step ? Theme.selected : .clear, in: .rect(cornerRadius: 13))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -190,10 +190,8 @@ struct OnboardingView: View {
                 .onChange(of: skills) { profile.skills = Self.split(skills) }
             ProfileHighlights(profile: profile)
         case 4:
-            heading("Tune your assistance", "Start concise and professional. Change this later in Settings.")
-            ToggleRow(title: "Concise responses", detail: "Short enough to use during a live conversation.", isOn: Binding(
-                get: { model.state.settings.responseLength == "concise" },
-                set: { value in model.updateSettings { $0.responseLength = value ? "concise" : "balanced" } }))
+            heading("Tune your assistance", "Choose how answers are written. Change this later in Settings.")
+            AnswerSettings()
             ToggleRow(title: "Relevant CV context", detail: "Used only when your question benefits from it.", isOn: Binding(
                 get: { model.state.settings.useCvContext },
                 set: { value in model.updateSettings { $0.useCvContext = value } }))
@@ -225,7 +223,7 @@ struct OnboardingView: View {
     private func feature(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 14)).frame(width: 36, height: 36)
-                .background(Theme.subtle, in: .rect(cornerRadius: 10))
+                .background(Theme.subtle, in: .rect(cornerRadius: 16))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)

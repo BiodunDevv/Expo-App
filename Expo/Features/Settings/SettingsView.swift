@@ -26,6 +26,7 @@ struct SettingsView: View {
                 Hairline()
                 toggle("Minimize when Assist starts", "Return focus to your meeting application.", \.minimizeOnStart)
             }
+            Card(title: "Answers", subtitle: "How Expo writes during a session.", icon: "chat") { AnswerSettings() }
             Card(title: "Audio", subtitle: "Computer output is the default. Selected application mode keeps unrelated system sounds out of the meeting context.", icon: "audio") {
                 Picker("Capture mode", selection: setting(\.audioCaptureMode)) {
                     Text("Computer output (all screens)").tag(AudioCaptureMode.allSystemOutput)
@@ -72,6 +73,16 @@ struct SettingsView: View {
             Card(title: "Floating bot", icon: "chat") {
                 ToggleRow(title: "Show floating bot", detail: "Keeps Expo one click away. It always appears during an Assist session.",
                           isOn: Binding(get: { model.showsFloatingButton }, set: { model.showsFloatingButton = $0 }))
+            }
+            Card(title: "See-through", subtitle: "How much of the screen shows through the floating windows.", icon: "app") {
+                Picker("See-through", selection: setting(\.seeThrough)) {
+                    ForEach(SeeThrough.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            Card(title: "Email", subtitle: "You can change this for each session when you start or end it.", icon: "resume") {
+                EmailChoice(isOn: setting(\.emailNotes))
             }
             Card(title: "Application", icon: "app") {
                 toggle("Open Expo at login", "Start Expo quietly when you sign in to your Mac.", \.launchAtLogin)

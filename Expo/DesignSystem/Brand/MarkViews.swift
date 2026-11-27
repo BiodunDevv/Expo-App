@@ -104,8 +104,8 @@ struct MarkGrid: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(chosen ? Theme.selected : Theme.surface, in: .rect(cornerRadius: 12))
-            .overlay { RoundedRectangle(cornerRadius: 12).stroke(chosen ? Theme.accent : Theme.border, lineWidth: chosen ? 2 : 1) }
+            .background(chosen ? Theme.selected : Theme.surface, in: .rect(cornerRadius: 18))
+            .overlay { RoundedRectangle(cornerRadius: 18).stroke(chosen ? Theme.accent : Theme.border, lineWidth: chosen ? 2 : 1) }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

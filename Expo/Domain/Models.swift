@@ -207,13 +207,19 @@ struct ExpoSession: Codable, Identifiable, Hashable, Sendable {
     var contextVersion: Int?
     var profileContextEnabled: Bool?
     var prepNotes: String?
+    /// Whether the notes and transcript are emailed when the session ends.
+    var emailNotes: Bool?
 }
 
 struct ExpoSettings: Codable, Hashable, Sendable {
     var launchAtLogin = false
     var openMaximized = false
     var minimizeOnStart = true
-    var responseLength = "concise"
+    var answerStyle = AnswerStyle.standard
+    var plainEnglish = false
+    var seeThrough = SeeThrough.clear
+    /// The choice a new session starts with.
+    var emailNotes = true
     var useCvContext = true
     var warnOnSilence = true
     var autoAnswer = true
@@ -224,9 +230,12 @@ struct ExpoSettings: Codable, Hashable, Sendable {
     var captureMicrophone = true
     var audioSourceBundleID: String?
     var audioSourceName: String?
-    /// The meeting brief the user chose to remember; pre-fills every new meeting.
-    var savedBrief = ""
+    var profiles: [SavedProfile] = []
+    /// The profile used last, pre-selected for the next session.
+    var lastProfileID: String?
     var uiZoom = 1.0
+
+    private enum LegacyKeys: String, CodingKey { case savedBrief }
 
     init() {}
 
@@ -235,7 +244,10 @@ struct ExpoSettings: Codable, Hashable, Sendable {
         launchAtLogin = try c.value(.launchAtLogin, false)
         openMaximized = try c.value(.openMaximized, false)
         minimizeOnStart = try c.value(.minimizeOnStart, true)
-        responseLength = try c.value(.responseLength, "concise")
+        answerStyle = AnswerStyle(rawValue: try c.value(.answerStyle, "")) ?? .standard
+        plainEnglish = try c.value(.plainEnglish, false)
+        emailNotes = try c.value(.emailNotes, true)
+        seeThrough = SeeThrough(rawValue: try c.value(.seeThrough, "")) ?? .clear
         useCvContext = try c.value(.useCvContext, true)
         warnOnSilence = try c.value(.warnOnSilence, true)
         autoAnswer = try c.value(.autoAnswer, true)
@@ -245,7 +257,11 @@ struct ExpoSettings: Codable, Hashable, Sendable {
         captureMicrophone = try c.value(.captureMicrophone, true)
         audioSourceBundleID = try c.decodeIfPresent(String.self, forKey: .audioSourceBundleID)
         audioSourceName = try c.decodeIfPresent(String.self, forKey: .audioSourceName)
-        savedBrief = try c.value(.savedBrief, "")
+        profiles = try c.value(.profiles, [])
+        lastProfileID = try c.decodeIfPresent(String.self, forKey: .lastProfileID)
+        // The single remembered brief of earlier versions becomes the first profile.
+        let old = try decoder.container(keyedBy: LegacyKeys.self).value(.savedBrief, "")
+        if profiles.isEmpty, profiles.save(SavedProfile(name: "My meetings", details: old)) { lastProfileID = profiles[0].id }
         uiZoom = try c.value(.uiZoom, 1.0)
     }
 }
@@ -273,6 +289,9 @@ struct PersistedState: Codable, Sendable {
     var activeSessionId: String?
     /// Last answer from the plan and admin setting; nil until the backend has said.
     var screenHidingAllowed: Bool?
+    /// Speaking time and AI feedback for practice sessions, kept on this Mac.
+    var speechTimings: [String: SpeechTiming]?
+    var practiceReviews: [String: String]?
 }
 
 /// Whether Expo's windows appear in screenshots, recordings and screen shares.
@@ -314,6 +333,8 @@ struct BillingSummary: Decodable, Sendable, Equatable {
     var periodEnd: String?
     var usage: Usage?
 
+    /// The server emails notes only on paid plans.
+    var emailsNotes: Bool { plan != "free" }
     var smartAnswersLocked: Bool { enforced == true && features?.autoAnswer == false }
     var answersUsedUp: Bool {
         guard enforced == true, features?.autoAnswer == true, let usage else { return false }

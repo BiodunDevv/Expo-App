@@ -16,6 +16,7 @@ final class SystemAudioTap: @unchecked Sendable {
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var aggregate = AudioObjectID(kAudioObjectUnknown)
     private var ioProc: AudioDeviceIOProcID?
+    private var builtFor: String?
 
     init(queue: DispatchQueue) { self.queue = queue }
 
@@ -77,6 +78,7 @@ final class SystemAudioTap: @unchecked Sendable {
                 if !mono.isEmpty { onSamples(converter.resampler.process(mono)) }
             }, "Expo could not read from the audio device.")
             try check(AudioDeviceStart(aggregate, ioProc), "Expo could not start computer audio capture.")
+            builtFor = output
         } catch {
             stop()
             throw error
@@ -93,6 +95,7 @@ final class SystemAudioTap: @unchecked Sendable {
         }
         if tap != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tap) }
         ioProc = nil
+        builtFor = nil
         aggregate = AudioObjectID(kAudioObjectUnknown)
         tap = AudioObjectID(kAudioObjectUnknown)
     }
@@ -115,6 +118,12 @@ final class SystemAudioTap: @unchecked Sendable {
                 return sum / Float(channels)
             }
         }
+    }
+
+    /// The Mac switched speakers or headphones since capture began.
+    var outputChanged: Bool {
+        guard let builtFor, let current = Self.defaultOutputUID() else { return false }
+        return current != builtFor
     }
 
     private func check(_ status: OSStatus, _ message: String) throws {

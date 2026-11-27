@@ -6,6 +6,7 @@ struct PracticeView: View {
     @Environment(AppModel.self) private var model
     @State private var kind = PracticeKind.interview
     @State private var topic = ""
+    @State private var profileID: String?
     @State private var starting = false
     @State private var message = ""
 
@@ -48,36 +49,20 @@ struct PracticeView: View {
                             Text(option.title).font(.system(size: 12, weight: chosen ? .bold : .medium))
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(chosen ? Theme.selected : Theme.surface, in: .rect(cornerRadius: 12))
-                        .overlay { RoundedRectangle(cornerRadius: 12).stroke(chosen ? Theme.accent : Theme.border, lineWidth: chosen ? 2 : 1) }
+                        .background(chosen ? Theme.selected : Theme.surface, in: .rect(cornerRadius: 18))
+                        .overlay { RoundedRectangle(cornerRadius: 18).stroke(chosen ? Theme.accent : Theme.border, lineWidth: chosen ? 2 : 1) }
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(chosen ? .isSelected : [])
                 }
             }
-            VStack(alignment: .leading, spacing: 5) {
-                Text("\(kind.topicPrompt) (optional)").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.secondary)
-                TextEditor(text: $topic)
-                    .font(.system(size: 13))
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .frame(height: 78)
-                    .background(Theme.surface, in: .rect(cornerRadius: 9))
-                    .overlay { RoundedRectangle(cornerRadius: 9).stroke(Theme.border) }
-                    .accessibilityLabel(kind.topicPrompt)
-                    .onChange(of: topic) {
-                        if topic.count > 8_000 { topic = String(topic.prefix(8_000)) }
-                    }
-                if !model.state.settings.savedBrief.isEmpty {
-                    Button("Use my saved meeting brief") { topic = model.state.settings.savedBrief }
-                        .buttonStyle(.expo(.plain, compact: true))
-                }
-            }
+            SavedProfilePicker(selection: $profileID, notes: $topic)
+            NotesEditor(label: "\(kind.topicPrompt) (optional)", text: $topic, height: 78)
             HStack(alignment: .top, spacing: 14) {
                 step("mic", "Ask or play a question", "Say it aloud, or play a video or call")
                 step("bot", "See an answer", "It appears on screen as you go")
-                step("resume", "Review after", "Transcript and notes are saved")
+                step("resume", "Review after", "Pace, filler words and feedback")
             }
             if let blocker = model.readiness.blockers.first {
                 Text("\(blocker.title): \(blocker.detail)").font(.system(size: 12)).foregroundStyle(Theme.warning)

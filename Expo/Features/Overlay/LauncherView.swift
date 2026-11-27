@@ -34,7 +34,7 @@ struct LauncherView: View {
                         overlays.move(.launcher, to: NSPoint(x: start.window.x + travel.width, y: start.window.y + travel.height))
                     }
                     .onEnded { _ in
-                        if moved { overlays.finishMove(.launcher) } else { overlays.toggleDock() }
+                        if moved { overlays.finishMove(.launcher) } else { overlays.openFromBot() }
                         start = nil
                         moved = false
                     }
@@ -50,7 +50,7 @@ struct LauncherView: View {
                             .contentShape(.circle)
                     }
                     .buttonStyle(.plain)
-                    .help("Turn the floating bot off")
+                    .hint("Turn the floating bot off")
                     .accessibilityLabel("Turn the floating bot off")
                     .transition(.scale.combined(with: .opacity))
                 }
@@ -63,10 +63,10 @@ struct LauncherView: View {
                 Divider()
                 Button("Turn Off Floating Bot") { overlays.hideFloatingBot() }
             }
-            .help("Start with Expo. Drag to move.")
+            .hint("Start with Expo. Drag to move.")
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Open Expo Assist")
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction { overlays.toggleDock() }
+            .accessibilityAction { overlays.openFromBot() }
     }
 }

@@ -58,8 +58,8 @@ struct PageBanner: View {
         }
         .padding(.leading, 20).padding(.trailing, 14).padding(.vertical, 10)
         .background { Wash() }
-        .clipShape(.rect(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).stroke(Theme.border) }
+        .clipShape(.rect(cornerRadius: 22))
+        .overlay { RoundedRectangle(cornerRadius: 22).stroke(Theme.border) }
     }
 }
 
@@ -91,8 +91,8 @@ struct StatTile: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(Theme.surface, in: .rect(cornerRadius: 13))
-        .overlay { RoundedRectangle(cornerRadius: 13).stroke(Theme.border) }
+        .background(Theme.surface, in: .rect(cornerRadius: 19))
+        .overlay { RoundedRectangle(cornerRadius: 19).stroke(Theme.border) }
         .shadow(color: .black.opacity(hovering ? 0.09 : 0), radius: 8, y: 4)
         .offset(y: hovering ? -2 : 0)
         .onHover { hovering = $0 }

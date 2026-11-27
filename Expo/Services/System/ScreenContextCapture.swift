@@ -10,7 +10,8 @@ struct ScreenSource: Identifiable, Hashable, Sendable {
 
 /// One still image, taken only when the user asks about their screen.
 enum ScreenContextCapture {
-    private static let maxWidth = 1_280.0
+    /// Wide enough to read small text on a whole screen.
+    private static let maxWidth = 2_048.0
     private static let maxDataURLLength = 2_800_000
 
     static func sources() async throws -> [ScreenSource] {
@@ -56,7 +57,7 @@ enum ScreenContextCapture {
             size = CGSize(width: display.width, height: display.height)
         }
         var width = min(maxWidth, size.width * Double(filter.pointPixelScale))
-        for quality in [0.72, 0.55, 0.4] {
+        for quality in [0.75, 0.6, 0.45, 0.4] {
             let configuration = SCStreamConfiguration()
             configuration.width = max(1, Int(width))
             configuration.height = max(1, Int(width * size.height / max(1, size.width)))

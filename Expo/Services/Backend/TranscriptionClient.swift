@@ -9,6 +9,8 @@ struct TranscriptionResult: Decodable, Sendable {
     var source: String?
     var channelIndex: Int?
     var sessionId: String?
+    /// First word to last, when the server reports it.
+    var speechSeconds: Double?
 }
 
 struct TranscriptionFailure: Sendable {

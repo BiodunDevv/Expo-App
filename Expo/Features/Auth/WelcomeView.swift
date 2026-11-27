@@ -92,8 +92,8 @@ struct WelcomeView: View {
                     Text(symbol)
                         .font(.system(size: 22, weight: .medium))
                         .frame(width: 54, height: 52)
-                        .background(Theme.surface, in: .rect(cornerRadius: 11))
-                        .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(Theme.border) }
+                        .background(Theme.surface, in: .rect(cornerRadius: 17))
+                        .overlay { RoundedRectangle(cornerRadius: 17).strokeBorder(Theme.border) }
                         .shadow(color: .black.opacity(0.08), radius: 0, y: 3)
                 }
             }
@@ -119,7 +119,7 @@ struct WelcomeView: View {
                         Image(systemName: point.symbol)
                             .font(.system(size: 13))
                             .frame(width: 30, height: 30)
-                            .background(Theme.subtle, in: .rect(cornerRadius: 8))
+                            .background(Theme.subtle, in: .rect(cornerRadius: 13))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(point.title).font(.system(size: 12.5, weight: .semibold))
                             Text(point.detail).font(.system(size: 11.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)

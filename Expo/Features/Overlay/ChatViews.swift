@@ -4,54 +4,43 @@ import ThinkingOrbsKit
 // The pieces of the conversation: messages, the waiting state, the empty state
 // and the composer's controls.
 
-/// What the person asked, on the right.
+/// What was asked, on the right, with the captured picture when there is one.
 struct QuestionBubble: View {
     var text: String
     var screen: Bool
-    var time: String?
+    /// The capture behind the question, kept only while the session runs.
+    var picture: String?
+    @State private var showing = false
 
-    var body: some View {
-        HStack {
-            Spacer(minLength: 48)
-            VStack(alignment: .trailing, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if screen { Image(systemName: "rectangle.on.rectangle").accessibilityLabel("Asked with your screen") }
-                    Text(text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                }
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(Theme.onAccent)
-                .padding(.horizontal, 13).padding(.vertical, 9)
-                .background(Theme.accent, in: .rect(topLeadingRadius: 15, bottomLeadingRadius: 15, bottomTrailingRadius: 5, topTrailingRadius: 15))
-                if let time { Text(time).font(.system(size: 10)).foregroundStyle(Theme.tertiary) }
-            }
-        }
+    private var image: NSImage? {
+        guard let encoded = picture?.split(separator: ",", maxSplits: 1).last, let data = Data(base64Encoded: String(encoded)) else { return nil }
+        return NSImage(data: data)
     }
-}
-
-/// An answer from Expo: who, when, the text, then what can be done with it.
-struct ExpoMessage<Content: View>: View {
-    var tag: String?
-    var time: String?
-    /// The newest message, still being written, has a moving bot.
-    var live = false
-    @ViewBuilder var content: Content
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Group {
-                if live { RobotMark(size: 24) } else { Logo(size: 24) }
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack {
+                Spacer(minLength: 60)
+                Text(text).font(.system(size: 12.5, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.white.opacity(0.13), in: .rect(cornerRadius: 16))
+                    .overlay { RoundedRectangle(cornerRadius: 16).stroke(Glass.line) }
             }
-            .padding(.top, -1)
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 6) {
-                    Text("Expo").font(.system(size: 11.5, weight: .bold))
-                    if let tag { Tag(text: tag, tone: .accent) }
-                    if let time { Text(time).font(.system(size: 10.5)).foregroundStyle(Theme.tertiary) }
+            if picture != nil {
+                Button { showing.toggle() } label: { Label(showing ? "Hide screenshot" : "View screenshot", systemImage: "photo") }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                if showing, let image {
+                    Image(nsImage: image).resizable().scaledToFit()
+                        .frame(maxHeight: 240)
+                        .clipShape(.rect(cornerRadius: 10))
+                        .accessibilityLabel("The captured screen")
                 }
-                content
+            } else if screen {
+                Label("Asked with your screen", systemImage: "photo").font(.system(size: 11)).foregroundStyle(Theme.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .textHalo()
     }
 }
 
@@ -62,21 +51,27 @@ struct AnswerActions: View {
     @State private var copied = false
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
                 copied = true
                 Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-            } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-            ForEach(Refinement.allCases) { refinement in
-                Button(refinement.rawValue) {
-                    model.assist.submit(refinement.prompt(for: text), label: "\(refinement.rawValue) version")
+            } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").frame(width: 26, height: 24).contentShape(.rect) }
+                .buttonStyle(.plain)
+                .hint("Copy the answer").accessibilityLabel(copied ? "Copied" : "Copy answer")
+            Menu {
+                ForEach(Refinement.allCases) { refinement in
+                    Button(refinement.rawValue) {
+                        model.assist.submit(refinement.prompt(for: text), label: "\(refinement.rawValue) version")
+                    }
                 }
+            } label: { Image(systemName: "ellipsis").frame(width: 26, height: 24).contentShape(.rect) }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                 .disabled(model.assist.isAsking)
-            }
+                .hint("Shorter, with an example, or simpler").accessibilityLabel("Change the answer")
         }
-        .buttonStyle(ChipStyle())
+        .font(.system(size: 12)).foregroundStyle(Theme.secondary)
     }
 }
 
@@ -96,7 +91,7 @@ struct ChipStyle: ButtonStyle {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(on ? Theme.onAccent : hovering ? Theme.text : Theme.secondary)
                 .padding(.horizontal, 9).frame(height: 24)
-                .background(on ? Theme.accent : hovering ? Theme.selected : Theme.subtle, in: .capsule)
+                .background(on ? Theme.accent : hovering ? Theme.selected : Theme.text.opacity(0.08), in: .capsule)
                 .contentShape(.capsule)
                 .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
                 .fixedSize()
@@ -120,46 +115,25 @@ struct ThinkingLabel: View {
     }
 }
 
-/// Before the first question: the listening orb and ways to begin.
-struct ChatEmptyState: View {
+/// Before the first question.
+struct SessionEmptyState: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let listening = model.assist.snapshot.lifecycle == .listening
-        VStack(spacing: 14) {
-            if !model.panelCompact { VoiceOrb(level: model.assist.level, size: 68, active: listening) }
+        VStack(spacing: 12) {
+            AssistantRing(size: 68)
             VStack(spacing: 4) {
-                Text(listening ? "I’m listening" : "Ready when you are").font(.system(size: 15, weight: .bold))
-                Text(model.assist.isPractice ? "Ask or play a practice question. A model answer appears here."
-                     : model.assist.autoAnswer ? "Speak, and Expo answers at each pause. You can also type below." : "Ask about this conversation, or let Expo suggest what to say.")
-                    .font(.system(size: 12)).foregroundStyle(Theme.secondary).multilineTextAlignment(.center)
+                Text(listening ? "I’m listening" : "Ready when you are").font(.system(size: 15, weight: .semibold))
+                Text(model.assist.isPractice ? "Ask or play a practice question."
+                     : !listening ? "Type a question, or resume listening."
+                     : model.assist.autoAnswer ? "Speak, and answers appear here." : "Type a question and the answer appears here.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
             }
-            VStack(spacing: 7) {
-                starter("star", "What should I say?") { Task { await model.assist.suggest() } }
-                starter("resume", "Summarize so far") { model.assist.submit("Summarize the conversation so far.", label: "Summarize so far") }
-                starter("chat", "Explain the last point") { model.assist.submit("Explain the last point made in this conversation.", label: "Explain the last point") }
-            }
-            .frame(maxWidth: 300)
-            .disabled(model.assist.isAsking)
+            .multilineTextAlignment(.center)
+            .textHalo()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-    }
-
-    private func starter(_ symbol: String, _ title: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Icon8(symbol, size: 24)
-                Text(title)
-                Spacer()
-                Image(systemName: "arrow.up.right").font(.system(size: 10)).foregroundStyle(Theme.tertiary)
-            }
-            .font(.system(size: 12.5, weight: .medium))
-            .padding(.horizontal, 12).frame(height: 42)
-            .background(Theme.surface, in: .rect(cornerRadius: 11))
-            .overlay { RoundedRectangle(cornerRadius: 11).stroke(Theme.border) }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -67,7 +67,7 @@ final class AppModel {
     static let privacyFailureMessage = "Assist stopped because Expo could not confirm it is hidden from screen sharing. Your session was preserved."
     @ObservationIgnored var onPrivacyRetry: () -> Void = {}
     @ObservationIgnored var canShowToast: () -> Bool = { true }
-    /// The meeting brief is asked for before every Assist start.
+    /// A meeting is confirmed before it starts.
     var presentingStart = false
 
     let store = AppStore()
@@ -214,13 +214,16 @@ final class AppModel {
         return result
     }
 
-    var dockMinimized = false {
-        didSet { if dockMinimized != oldValue { onOverlayChange() } }
+    /// The session window is put away and the floating bot stands in for it.
+    var sessionHidden = false {
+        didSet { if sessionHidden != oldValue { onOverlayChange() } }
     }
-    var panelCompact = Preference.bool("panelCompact", default: false) {
-        didSet { Preference.set(panelCompact, "panelCompact") }
-    }
-
+    /// What the session window is showing.
+    var layout = SessionLayout()
+    /// In transcript-only mode, whether the transcript or the answers are up.
+    var showingTranscript = true
+    /// Whether the session window is at its small size.
+    var sessionIsSmall = false
     var glanceMode = Preference.bool("glanceMode", default: false) {
         didSet { Preference.set(glanceMode, "glanceMode") }
     }
@@ -460,7 +463,7 @@ final class AppModel {
 
     // MARK: Assist entry points
 
-    /// Every way of starting Assist goes through the meeting brief.
+    /// Every way of starting a meeting asks first.
     func requestAssistStart() {
         if assist.isActive { showAssistantPanel(); return }
         route = .home
@@ -475,19 +478,60 @@ final class AppModel {
             throw BackendError("Practice listens to your microphone. Turn on Include my microphone in Settings.")
         }
         try await startAssist(title: PracticeSession.title(kind, topic: topic),
-                              brief: PracticeSession.brief(kind, topic: topic), remember: false)
+                              brief: PracticeSession.brief(kind, topic: topic))
     }
 
-    func startAssist(title: String, brief: String, remember: Bool) async throws {
-        dockMinimized = false
+    /// The saved profile given to new meetings, when one is marked in use.
+    var meetingProfile: SavedProfile? {
+        state.settings.profiles.first { $0.id == state.settings.lastProfileID }
+    }
+
+    /// A meeting needs no details: Expo names it from what was said when it ends.
+    func startMeeting() async throws {
+        try await startAssist(title: "", brief: meetingProfile?.details ?? "")
+    }
+
+    func startAssist(title: String, brief: String) async throws {
+        sessionHidden = false
+        // A new session begins as the input alone.
+        layout = SessionLayout()
+        showingTranscript = true
         guard overlaysEligible else { return }
         if let privacyFailure { throw BackendError(privacyFailure + " Use Retry Privacy Protection in the menu bar.") }
-        // Ticking the box with empty text clears the saved brief.
-        if remember { updateSettings { $0.savedBrief = String(brief.trimmed.prefix(MeetingBrief.maxCharacters)) } }
         try await assist.start(title: title, brief: brief)
         presentingStart = false
         if state.settings.minimizeOnStart { hideMainWindow() }
         showAssistantPanel()
+    }
+
+    /// Asks the assistant how a finished practice went and keeps the reply.
+    func coachPractice(_ id: String, onDelta: @escaping @Sendable (String) async -> Void) async throws {
+        guard state.consent.transcriptCapture.granted else { throw BackendError("Transcript consent is required for feedback.") }
+        let answer = try await backend.ask(sessionId: id, question: PracticeReview.coachingRequest, screenImage: nil,
+                                           format: PracticeReview.coachingFormat, onDelta: onDelta)
+        guard let text = answer.summary.trimmed.nonEmpty else { throw BackendError("Expo returned no feedback. Please try again.") }
+        store.update { $0.practiceReviews = ($0.practiceReviews ?? [:]).merging([id: text]) { $1 } }
+    }
+
+    /// Unknown billing is treated as allowed; the server has the last word.
+    var canEmailNotes: Bool { billing?.emailsNotes != false }
+
+    /// Changes the email choice for one session.
+    func setEmailNotes(_ on: Bool, for id: String) {
+        store.updateSession(id) { $0.emailNotes = on }
+        guard isBackendID(id) else { return }
+        Task {
+            do { _ = try await backend.updateSession(id, .init(emailNotes: on)) }
+            catch { report(error) }
+        }
+    }
+
+    /// Emails a finished session's notes and transcript now.
+    func emailSession(_ id: String) async {
+        _ = await attempt {
+            let address = try await backend.emailNotes(id)
+            notify("Sent to \(address).")
+        }
     }
 
     func zoom(_ step: Int?) {

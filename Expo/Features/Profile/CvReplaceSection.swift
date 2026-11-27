@@ -79,6 +79,6 @@ struct CvReplaceSection: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.accentSoft, in: .rect(cornerRadius: 12))
+        .background(Theme.accentSoft, in: .rect(cornerRadius: 18))
     }
 }

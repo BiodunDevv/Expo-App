@@ -16,7 +16,7 @@ struct RootView: View {
         .foregroundStyle(Theme.text)
         .overlay(alignment: .top) { ToastStack() }
         .sheet(isPresented: Binding(get: { model.phase == .ready && model.presentingStart }, set: { model.presentingStart = $0 })) {
-            StartAssistSheet().environment(model).foregroundStyle(Theme.text)
+            StartMeetingSheet().environment(model).foregroundStyle(Theme.text)
         }
         .ignoresSafeArea()
     }

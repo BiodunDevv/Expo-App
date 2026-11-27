@@ -50,16 +50,16 @@ Expo/
     Onboarding/     First-launch tour
     Home/           Home and the ready check
     Practice/       Starting a practice session
-    Session/        Start Assist sheet
-    Overlay/        Floating bot, bar and conversation panel
+    Session/        The question asked before a meeting starts
+    Overlay/        Floating bot and the session window
     History/        Saved sessions, transcripts and notes
     Profile/        Profile and CV
     Settings/       Settings, plans and the audio test row
   DesignSystem/     Theme, shared controls, Markdown
-    Brand/          The bot marks and the voice orb
+    Brand/          The bot marks and the voice ring
   Assets.xcassets/  Bots, Icons, Illustrations, Privacy, app icon
   Resources/        Animations and the moving robots
-Packages/           Libraries.dev bot avatars and thinking orbs
+Packages/           Libraries.dev bot avatars, orbs, beam and ring
 Design/robot/       Source art for the voxel robots
 scripts/            Install, checks, icon generation
 Tests/              Logic checks
@@ -80,11 +80,18 @@ Transcript consent, a passed computer-audio test and a reachable service are
 required; the microphone and screen access are optional. macOS cannot report
 whether computer audio capture is allowed, so that line shows the last audio test
 on this Mac, which can be out of date if the permission is later removed. The
-start sheet warns about anything blocking, without preventing a start.
+start question warns about anything blocking, without preventing a start.
+
+## Starting and naming a meeting
+
+Starting asks only "Start a meeting?", from the main window or the floating bot.
+There is nothing to fill in. The session is called `Meeting session` until it
+ends; the backend then names it from what was said, or from what was asked when
+nothing was heard. A name someone typed is never replaced.
 
 ## Auto answer and transcript only
 
-The answer panel and the bar switch between the two at any time; the choice is
+The session window switches between the two at any time; the choice is
 remembered. Both always save the transcript. With **Auto answer**, everything
 heard is sent to the assistant at each pause of about 0.7 seconds, with no check
 for whether it is a question; only bare hesitation sounds are left out, and an
@@ -94,40 +101,108 @@ twice. Each message sent counts as a question, so this uses the allowance
 quickly once plans are enforced. Words heard while an answer is being written go
 in the next message.
 
-## Conversation panel
+## The session window
 
-Messages show who spoke and when, with Copy, Shorter, Example and Simpler under
-each answer. The composer grows to four lines, can include the screen, and turns
-Send into Stop while answering; stopping keeps the text that had arrived. The
-voice orb follows the captured audio (see `THIRD_PARTY.md`). Its shader compiles
-at run time, so no Metal toolchain is needed to build.
+A session shows one window, in three sizes:
 
-## Floating controls
+- **Input** (how it starts): the input, with **Auto** and **Transcript** beside
+  it, over the toolbar.
+- **Chat**: the whole conversation between them. It opens with the first answer,
+  unless it was hidden by hand, and whenever you ask something.
+- **Minimized**: a small note that the meeting is in progress, with its time, new
+  answers and **Show chat**. Answers never expand it.
 
-The bot floats only while nothing else of Expo's is open; clicking it offers
-**New session** or **Practice**. The bot, the bar and the answer panel can each
-be dragged anywhere and stay where they are left. During a session the
-conversation sits directly under the bar at the same width, and dragging either
-moves both. The
-bar folds into a small pill, and the panel switches between a small and the usual
-size with **Shrink / Expand**. While a question is being spoken it appears in the
-message box and sends when the speaker pauses; typing there takes it over. If
-audio or transcription drops, Expo keeps retrying by itself, less often each
-time, unless the cause needs the person (such as a permission).
+The toolbar holds the session menu, **Answer** (`⌘↩`), screen capture, hide from
+screen sharing, options, listening, end, small size, minimize (**−**) and **Show
+chat / Hide chat**. Esc steps down: options, chat, minimized, then the floating
+bot.
+
+The chat follows the newest words. Scroll up and it holds still, offering
+**Latest** or **New message**; scrolling to the end, pressing that, or asking
+something follows again.
+
+Drag the sides to change the width, the bottom or a lower corner to change the
+height, and the toolbar or the small note to move it. Size and place are
+remembered.
+
+With auto answer on, no transcript is shown: heard words appear in the input,
+then the answer. Transcript only shows what is said, with a **Chat** page for
+anything asked. A captured picture can be viewed while the session runs and is
+not saved. Glance view, answer style and see-through are under options. A beam
+runs round the window only while Expo is hearing or answering.
 
 ## Practice
 
 Practice is a live Assist session for rehearsing: choose interview, sales call,
 presentation questions or a hard conversation, optionally describe it, and
-start. It uses the same bar and answer panel, listens to the microphone and the
+start. It uses the same session window, listens to the microphone and the
 computer, answers what it hears on screen, and saves the transcript and notes to
 History. Auto answer and your own voice are always on at the start, without
 changing the settings for real sessions. A session is recognised as practice by
 its `Practice · ` title. Answers count like any session's.
 
+## Answer style
+
+Options (also Settings and onboarding) sets how questions are answered: standard, bullets, short or full script, each optionally
+in simple English. It applies to heard and typed questions and **What should I
+say?**, not to named follow-ups such as Shorter. The backend must accept
+`answerFormat` on `/assistant/ask/stream`.
+
+## Saved profiles
+
+Notes for a job or client, added in Profile or saved from the practice screen.
+The one marked **In use** in Profile is given to new meetings, and the start
+question names it. They stay on this Mac, in the encrypted store; the CV is one
+per account.
+
+## Practice review
+
+Opening a finished practice session shows words spoken, pace, filler phrases and
+each reply beside the suggested answer, all worked out on this Mac. **Get
+feedback** asks the assistant for coaching and counts as one answer. Pace needs
+the backend's `speechSeconds`; sessions recorded before it show none.
+
+## Screen capture
+
+**Screen capture** in the toolbar is set to the entire screen; press return to
+answer every question visible, with nothing to type
+(`⇧⌘↩` does it in one step). A typed question is asked about the screen instead.
+The answer is saved with the session and the transcript gets a `Screen` line
+naming what was answered. The picture can be viewed while the session runs and is never saved; Expo's
+own windows are left out. The chat provider must be able to read images.
+
+## See-through
+
+The floating windows are dark glass with light text in every appearance, so they
+read over white or dark screens. **Clear**, **Tinted** and **Solid** are chosen
+from the options menu or in Settings. The text sits on cards;
+the space around them lets the meeting show. Code in answers has its language,
+line numbers, colour and a copy button.
+
+## Audio recovery
+
+A quiet Mac delivers no computer audio, which is not a fault: Expo sends a little
+silence to keep transcription connected, and rebuilds capture only when the
+output device changes or the microphone stops delivering. One alert is shown per
+outage.
+
+## Emailed notes
+
+Choose whether a session's notes and transcript are emailed: a default in
+Settings, and for the running session in its options or
+when ending it. A finished session also has **Email it to me**. The server sends
+only to the account's own address, on plans that include emailed notes, and needs
+its mail keys. It needs the backend's `emailNotes` field and
+`POST /sessions/:id/notes/email`.
+
+## Small size
+
+The toolbar's size button shrinks the session window to its small size and
+switches back to the size from before.
+
 ## Glance view
 
-The answer panel's glance button shrinks it to one headline and up to three
+**Glance view** in the options menu reduces the answers to one headline and up to three
 points from the latest answer or suggestion, selected from the text on this Mac
 and not rewritten. **Shorter**, **Example** and **Simpler** each ask the
 assistant again and count as a question. **Full answer** returns to the
@@ -135,11 +210,16 @@ conversation. The choice is remembered.
 
 ## Screen-share privacy
 
-Switch **Hidden / Visible** on the sign-in window, the floating dock or answer
-panel, the sidebar, the menu bar menu, or Settings. It works before sign-in, is
+Switch **Hidden / Visible** on the sign-in window, the session
+window, the sidebar, the menu bar menu, or Settings. It works before sign-in, is
 saved on this Mac and defaults to hidden. When
 the backend says the plan or administrator does not allow hiding, Expo is visible
 and the switch is locked.
+
+While hidden, Expo's menus are left out of capture too, it shows no tooltips,
+and the pointer keeps its plain arrow over the floating windows. macOS gives an
+app no way to remove the pointer itself from another app's screen share, so
+people watching can still see it move.
 
 Switching replaces Expo's windows, because macOS (seen on 27.2) leaves a window
 capturable if it is hidden a second time. The flag itself is a request to macOS:
@@ -179,7 +259,7 @@ Settings): one of eighteen Libraries.dev bot avatars, drawn in code, or the
 Icons8 [3D Stickle voxel robot](https://icons8.com/illustrations/illustration/3d-stickle-artificial-intelligence-robot-symbol-built-from-voxel-cubes)
 in paper, blue, coral, green or violet. `Design/robot` holds the voxel originals;
 `swift scripts/make-icon.swift` produces those variants. Work by the AI is shown
-with Libraries.dev thinking orbs. Both kits are in `Packages/LibrariesDev`, whose
+with Libraries.dev thinking orbs. The Libraries.dev kits are in `Packages/LibrariesDev`, whose
 README says why they are copied. The icon in Applications is always the paper
 robot; the Dock follows the choice while Expo runs.
 **Before distributing Expo:** these files were
